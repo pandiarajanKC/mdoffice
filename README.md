@@ -9,7 +9,6 @@ control, the enterprise UI shell, and database connectivity. Later phases (Meeti
 Projects, AI Tools, Calendar, Reports, ...) build on top of this without restructuring it.
 
 ## Architecture
-
 ```
 Route  →  Service  →  Repository / ORM  →  Database
 ```
@@ -257,5 +256,6 @@ See `app/dashboard/routes.py` (`ROADMAP`) for the phase-by-phase module rollout 
 to users on their dashboard, and the original master specification for full phase details
 (Meetings → Projects → Employee Portal → Dashboards → Calendar → AI Tools →
 Notifications → Reports & Hardening).
-#   m d o f f i c e  
+#   m d o f f i c e 
+ 
  
