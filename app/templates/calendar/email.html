@@ -1,0 +1,145 @@
+{% extends "layouts/base.html" %}
+{% block title %}Email — {{ product_name }}{% endblock %}
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">Email</h4>
+      <div class="text-muted" style="font-size:.85rem;">Search your inbox and turn any email into a Project, Task, Action Tracker item, or Meeting.</div>
+    </div>
+    <a href="{{ url_for('calendar.status') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-calendar3 me-1"></i>Calendar</a>
+  </div>
+
+  {% if not email_configured %}
+    <div class="md-card">
+      <div class="empty-state py-5">
+        <i class="bi bi-envelope-x"></i>
+        <div class="fw-semibold mb-2">Gmail sync isn't configured yet</div>
+        <div style="font-size:.85rem; max-width:480px; margin:0 auto;">
+          An administrator needs to set <code>GOOGLE_OAUTH_CLIENT_ID</code>,
+          <code>GOOGLE_OAUTH_CLIENT_SECRET</code> and <code>GOOGLE_OAUTH_REDIRECT_URI</code>
+          in the application's <code>.env</code> — the same OAuth client already used for
+          Calendar Sync — and enable the Gmail API on that Google Cloud project.
+        </div>
+      </div>
+    </div>
+  {% elif not integration %}
+    <div class="md-card">
+      <div class="empty-state py-5">
+        <i class="bi bi-envelope"></i>
+        <div class="fw-semibold mb-2">Connect your Gmail</div>
+        <div class="text-muted mb-3" style="font-size:.85rem; max-width:480px; margin:0 auto;">
+          Sign in with the same Google account you use for email. This app only gets
+          read-only access — it never sees your password, and nothing is ever sent on
+          your behalf.
+        </div>
+        <a href="{{ url_for('calendar.email_connect') }}" class="btn btn-sm btn-primary"><i class="bi bi-google me-1"></i>Sign in with Google</a>
+      </div>
+    </div>
+  {% else %}
+    <div class="md-card mb-3">
+      <div class="md-card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="user-avatar" style="width:44px;height:44px;">{{ (current_user.display_name or current_user.username)[:1]|upper }}</div>
+          <div>
+            <div class="fw-semibold">{{ current_user.display_name or current_user.username }}</div>
+            <div class="text-muted" style="font-size:.78rem;">
+              <span class="status-badge status-completed"><i class="bi bi-check-circle"></i> Connected</span>
+              {% if integration.google_account_email %} &middot; {{ integration.google_account_email }}{% endif %}
+            </div>
+            <div class="text-muted" style="font-size:.75rem;">
+              Last searched: {{ integration.last_used_at.strftime('%d %b %Y, %I:%M %p') if integration.last_used_at else 'Never' }}
+            </div>
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <form method="POST" action="{{ url_for('calendar.email_disconnect') }}" onsubmit="return confirm('Disconnect Gmail? You can reconnect any time.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="md-card mb-3">
+      <div class="md-card-body">
+        <form method="GET" action="{{ url_for('calendar.email_search') }}">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">From</label>
+              <input type="text" name="from" class="form-control form-control-sm" value="{{ from_query }}" placeholder="name or email address">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Subject</label>
+              <input type="text" name="subject" class="form-control form-control-sm" value="{{ subject_query }}" placeholder="contains...">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small fw-semibold">From date</label>
+              <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small fw-semibold">To date</label>
+              <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+              <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-search me-1"></i>Search</button>
+              {% if has_filters %}
+                <a href="{{ url_for('calendar.email_search') }}" class="btn btn-sm btn-outline-secondary" title="Clear filters"><i class="bi bi-x-lg"></i></a>
+              {% endif %}
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if search_error %}
+      <div class="md-card">
+        <div class="empty-state py-4"><i class="bi bi-exclamation-triangle"></i><div>{{ search_error }}</div></div>
+      </div>
+    {% elif not has_filters %}
+      <div class="md-card">
+        <div class="empty-state py-4"><i class="bi bi-envelope-open"></i><div>Enter a From, Subject, or date filter above and search to see matching emails.</div></div>
+      </div>
+    {% elif not messages %}
+      <div class="md-card">
+        <div class="empty-state py-4"><i class="bi bi-envelope-open"></i><div>No emails matched those filters.</div></div>
+      </div>
+    {% else %}
+      <div class="d-flex flex-column gap-2">
+        {% for m in messages %}
+          <div class="md-card">
+            <div class="md-card-body">
+              <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+                <div style="min-width:0;">
+                  <div class="fw-semibold text-truncate" style="max-width:520px;">{{ m.subject }}</div>
+                  <div class="text-muted" style="font-size:.78rem;">
+                    {{ m.sender_name or m.sender_email or '(unknown sender)' }}
+                    {% if m.received_at %} &middot; {{ m.received_at.strftime('%d %b %Y, %I:%M %p') }}{% endif %}
+                  </div>
+                  {% if m.snippet %}<div class="text-muted mt-1" style="font-size:.8rem;">{{ m.snippet }}</div>{% endif %}
+                </div>
+                <div class="d-flex gap-2 flex-shrink-0">
+                  {% if m.web_link %}
+                    <a href="{{ m.web_link }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Open the full conversation in Gmail">
+                      <i class="bi bi-box-arrow-up-right me-1"></i>Open Thread
+                    </a>
+                  {% endif %}
+                  <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                      <i class="bi bi-arrow-return-right me-1"></i>Convert to...
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                      <li><a class="dropdown-item" href="{{ url_for('calendar.email_convert', message_id=m.external_message_id, target='project') }}"><i class="bi bi-kanban me-2"></i>Project</a></li>
+                      <li><a class="dropdown-item" href="{{ url_for('calendar.email_convert', message_id=m.external_message_id, target='task') }}"><i class="bi bi-clipboard-check me-2"></i>Task</a></li>
+                      <li><a class="dropdown-item" href="{{ url_for('calendar.email_convert', message_id=m.external_message_id, target='tracker') }}"><i class="bi bi-list-check me-2"></i>Action Tracker</a></li>
+                      <li><a class="dropdown-item" href="{{ url_for('calendar.email_convert', message_id=m.external_message_id, target='meeting') }}"><i class="bi bi-calendar-event me-2"></i>Meeting</a></li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

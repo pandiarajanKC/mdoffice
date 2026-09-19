@@ -1,0 +1,331 @@
+{% extends "layouts/base.html" %}
+{% block title %}{{ project.name }} — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+  <div class="mb-2">
+    <a href="{{ url_for('projects.list_view') }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Projects</a>
+  </div>
+
+  <div class="md-card mb-3">
+    <div class="md-card-body d-flex align-items-start justify-content-between flex-wrap gap-3">
+      <div>
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span class="text-muted" style="font-size:.75rem;">{{ project.project_code }}</span>
+          <span class="d-inline-block rounded-circle"
+                style="width:10px;height:10px;background:{{ {'GREEN':'#17825a','AMBER':'#b5750a','RED':'#d92d20'}[health] }};"
+                title="Health: {{ health.title() }}"></span>
+        </div>
+        <h5 class="fw-bold mb-1">{{ project.name }}</h5>
+        <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+          <span class="status-badge status-{{ badge_class(project.status.value, TASK_STATUS_BADGE) }}">{{ project.status.value.replace('_',' ') }}</span>
+          <span class="status-badge status-{{ badge_class(project.priority.value, PRIORITY_BADGE) }}">{{ project.priority.value }}</span>
+          {% set entity_type = "PROJECT" %}
+          {% set entity_id = project.id %}
+          {% include "components/_tag_widget.html" %}
+        </div>
+        <div class="text-muted" style="font-size:.8rem;">
+          {% if project.start_date %}Start: {{ project.start_date.strftime('%d %b %Y') }}{% endif %}
+          {% if project.target_date %} &middot; Target: {{ project.target_date.strftime('%d %b %Y') }}{% endif %}
+        </div>
+        <div class="progress mt-2" style="height:8px; width:220px;">
+          <div class="progress-bar" role="progressbar" style="width: {{ project.progress_percent }}%;"></div>
+        </div>
+        <div class="text-muted mt-1" style="font-size:.75rem;">{{ project.progress_percent }}% complete</div>
+      </div>
+
+      {% if is_ea %}
+        <form method="POST" action="{{ url_for('projects.update_status', project_id=project.id) }}" class="d-flex align-items-center gap-1">
+          {{ task_form.csrf_token }}
+          <select name="status" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+            {% for s in ['OPEN','IN_PROGRESS','ON_HOLD','COMPLETED','CANCELLED'] %}
+              <option value="{{ s }}" {{ 'selected' if project.status.value == s else '' }}>{{ s.replace('_',' ').title() }}</option>
+            {% endfor %}
+          </select>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <ul class="nav nav-tabs mb-3" id="projectTabs" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-overview" type="button">Overview</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tasks" type="button">Tasks <span class="badge bg-light text-dark">{{ tasks|length }}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-team" type="button">Team <span class="badge bg-light text-dark">{{ project.members|length + 1 }}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-meetings" type="button">Meetings <span class="badge bg-light text-dark">{{ tagged_meetings|length }}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-activity" type="button">Activity</button></li>
+    <li class="nav-item"><span class="nav-link disabled">Files <span class="nav-soon">Soon</span></span></li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- OVERVIEW -->
+    <div class="tab-pane fade show active" id="tab-overview">
+      <div class="md-card">
+        <div class="md-card-header"><h6>Description</h6></div>
+        <div class="md-card-body">
+          {% if project.description %}
+            <p style="font-size:.87rem; white-space: pre-line;">{{ project.description }}</p>
+          {% else %}
+            <div class="text-muted small">No description added.</div>
+          {% endif %}
+          <div class="text-muted" style="font-size:.78rem;">
+            Owner: {{ member_profiles.get(project.owner_employee_code).name if member_profiles.get(project.owner_employee_code) else project.owner_employee_code }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TASKS -->
+    <div class="tab-pane fade" id="tab-tasks">
+      {% if is_ea %}
+        <div class="mb-3">
+          <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newTaskModal">
+            <i class="bi bi-plus-lg me-1"></i>New Task
+          </button>
+        </div>
+      {% endif %}
+
+      {% if tasks %}
+        <div class="d-flex flex-column gap-2">
+          {% for task in tasks %}
+            <div class="md-card">
+              <div class="md-card-body">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                  <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      <span class="fw-semibold" style="font-size:.9rem;">{{ task.title }}</span>
+                      <span class="status-badge status-{{ badge_class(task.priority.value, PRIORITY_BADGE) }}">{{ task.priority.value }}</span>
+                      <span class="status-badge status-{{ badge_class(task.status.value, TASK_STATUS_BADGE) }}">{{ task.status.value.replace('_',' ') }}</span>
+                      {% if task.is_overdue %}<span class="status-badge status-overdue">OVERDUE</span>{% endif %}
+                    </div>
+                    {% if task.description %}<div class="text-muted mb-1" style="font-size:.8rem;">{{ task.description }}</div>{% endif %}
+                    <div class="text-muted" style="font-size:.78rem;">
+                      <i class="bi bi-people me-1"></i>{{ assignees_by_task.get(task.id, [])|join(', ') or 'Unassigned' }}
+                      {% if task.due_date %} &middot; <i class="bi bi-calendar-event me-1"></i>Due {{ task.due_date.strftime('%d %b %Y') }}{% endif %}
+                    </div>
+                  </div>
+                  {% if is_ea %}
+                    <form method="POST" action="{{ url_for('tasks.update_status', task_id=task.id) }}" class="d-flex align-items-center gap-1">
+                      {{ task_form.csrf_token }}
+                      <select name="status" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+                        {% for s in ['OPEN','IN_PROGRESS','COMPLETED','ON_HOLD','CANCELLED'] %}
+                          <option value="{{ s }}" {{ 'selected' if task.status.value == s else '' }}>{{ s.replace('_',' ').title() }}</option>
+                        {% endfor %}
+                      </select>
+                    </form>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="md-card"><div class="empty-state py-4"><i class="bi bi-list-check"></i><div>No tasks created for this project yet.</div></div></div>
+      {% endif %}
+    </div>
+
+    <!-- TEAM -->
+    <div class="tab-pane fade" id="tab-team">
+      {% if is_ea %}
+        <div class="mb-3">
+          <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addMemberModal">
+            <i class="bi bi-person-plus me-1"></i>Add Member
+          </button>
+        </div>
+      {% endif %}
+      <div class="md-card">
+        <div class="md-card-body">
+          <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+            <div>
+              <span class="fw-semibold" style="font-size:.87rem;">{{ member_profiles.get(project.owner_employee_code).name if member_profiles.get(project.owner_employee_code) else project.owner_employee_code }}</span>
+              <span class="text-muted" style="font-size:.78rem;"> — {{ member_profiles.get(project.owner_employee_code).department if member_profiles.get(project.owner_employee_code) else '' }}</span>
+            </div>
+            <span class="status-badge status-inprogress">Owner</span>
+          </div>
+          {% for member in project.members %}
+            {% set profile = member_profiles.get(member.employee_code) %}
+            <div class="d-flex justify-content-between align-items-center py-2 {% if not loop.last %}border-bottom{% endif %}">
+              <div>
+                <span class="fw-semibold" style="font-size:.87rem;">{{ profile.name if profile else member.employee_code }}</span>
+                <span class="text-muted" style="font-size:.78rem;"> — {{ profile.department if profile else '' }}</span>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="status-badge status-open">{{ member.role }}</span>
+                {% if is_ea %}
+                  <form method="POST" action="{{ url_for('projects.remove_member', project_id=project.id, member_id=member.id) }}">
+                    {{ task_form.csrf_token }}
+                    <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Remove"><i class="bi bi-x-circle"></i></button>
+                  </form>
+                {% endif %}
+              </div>
+            </div>
+          {% else %}
+            <div class="text-muted small py-2">No additional team members yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- MEETINGS -->
+    <div class="tab-pane fade" id="tab-meetings">
+      {% if is_ea and tag_meeting_form.meeting_id.choices %}
+        <form method="POST" action="{{ url_for('projects.tag_meeting', project_id=project.id) }}" class="d-flex gap-2 mb-3">
+          {{ tag_meeting_form.csrf_token }}
+          {{ tag_meeting_form.meeting_id(class="form-select form-select-sm") }}
+          <button type="submit" class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-link-45deg me-1"></i>Tag Meeting</button>
+        </form>
+      {% endif %}
+      {% if tagged_meetings %}
+        <div class="d-flex flex-column gap-2">
+          {% for link in meeting_project_links %}
+            <div class="md-card">
+              <div class="md-card-body d-flex justify-content-between align-items-center">
+                <a href="{{ url_for('meetings.workspace', meeting_id=link.meeting.id) }}" class="text-decoration-none text-dark">
+                  <div class="fw-semibold" style="font-size:.87rem;">{{ link.meeting.title }}</div>
+                  <div class="text-muted" style="font-size:.78rem;">{{ link.meeting.start_datetime.strftime('%d %b %Y, %I:%M %p') }}</div>
+                </a>
+                {% if is_ea %}
+                  <form method="POST" action="{{ url_for('projects.untag_meeting', project_id=project.id, link_id=link.id) }}">
+                    {{ task_form.csrf_token }}
+                    <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Untag"><i class="bi bi-x-circle"></i></button>
+                  </form>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="md-card"><div class="empty-state py-4"><i class="bi bi-calendar3"></i><div>No meetings tagged to this project yet.</div></div></div>
+      {% endif %}
+    </div>
+
+    <!-- ACTIVITY -->
+    <div class="tab-pane fade" id="tab-activity">
+      <div class="md-card">
+        <div class="md-card-body">
+          {% if activity_entries %}
+            {% for entry in activity_entries %}
+              <div class="roadmap-item">
+                <span class="roadmap-badge">{{ entry.performed_at.strftime('%d %b, %I:%M %p') }}</span>
+                <div>
+                  <div class="name">{{ entry.action_type.replace('_',' ').title() }}</div>
+                  <div class="detail">by {{ entry.performed_by }}{% if entry.new_value %} — {{ entry.new_value }}{% endif %}</div>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty-state py-3"><i class="bi bi-clock-history"></i><div>No activity recorded yet.</div></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if is_ea %}
+    <!-- New Task Modal -->
+    <div class="modal fade" id="newTaskModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('projects.add_task', project_id=project.id) }}">
+          {{ task_form.hidden_tag() }}
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-bold">New Project Task</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                {{ task_form.title.label(class="form-label small fw-semibold") }}
+                {{ task_form.title(class="form-control form-control-sm") }}
+              </div>
+              <div class="mb-2">
+                {{ task_form.description.label(class="form-label small fw-semibold") }}
+                {{ task_form.description(class="form-control form-control-sm", rows=2) }}
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Assigned To</label>
+                <select id="assigneeSelect" name="employee_codes" multiple class="form-select form-select-sm"></select>
+              </div>
+              <div class="row g-2">
+                <div class="col-4">
+                  {{ task_form.start_date.label(class="form-label small fw-semibold") }}
+                  {{ task_form.start_date(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-4">
+                  {{ task_form.due_date.label(class="form-label small fw-semibold") }}
+                  {{ task_form.due_date(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-4">
+                  {{ task_form.priority.label(class="form-label small fw-semibold") }}
+                  {{ task_form.priority(class="form-select form-select-sm") }}
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-sm btn-primary">Create Task</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Add Member Modal -->
+    <div class="modal fade" id="addMemberModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('projects.add_member', project_id=project.id) }}">
+          {{ member_form.hidden_tag() }}
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-bold">Add Team Member</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Employee</label>
+                <select id="memberSelect" name="employee_code" class="form-select form-select-sm"></select>
+              </div>
+              <div class="mb-2">
+                {{ member_form.role.label(class="form-label small fw-semibold") }}
+                {{ member_form.role(class="form-control form-control-sm", placeholder="e.g. Lead, Contributor, Reviewer") }}
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-sm btn-primary">Add Member</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      function initEmployeePicker(id, multi) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        new TomSelect(el, {
+          valueField: "code",
+          labelField: "label",
+          searchField: "label",
+          maxItems: multi ? null : 1,
+          placeholder: "Search employees by name or code...",
+          load: function (query, callback) {
+            if (query.length < 2) return callback();
+            fetch("{{ url_for('employees.search') }}?q=" + encodeURIComponent(query))
+              .then((r) => r.json())
+              .then((json) => callback(json))
+              .catch(() => callback());
+          },
+        });
+      }
+      initEmployeePicker("assigneeSelect", true);
+      initEmployeePicker("memberSelect", false);
+    });
+  </script>
+{% endblock %}

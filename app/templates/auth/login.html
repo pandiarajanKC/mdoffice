@@ -1,0 +1,25 @@
+{% extends "layouts/auth_base.html" %}
+{% block title %}Sign in — {{ product_name }}{% endblock %}
+{% block content %}
+  <p class="text-muted mb-4" style="font-size:.85rem;">
+    Sign in with your MD / EA account, or your Employee Code.
+  </p>
+  <form method="POST" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+      {{ form.username.label(class="form-label small fw-semibold") }}
+      {{ form.username(class="form-control", placeholder="e.g. admin, admin1, or your Employee Code", autofocus=true) }}
+    </div>
+    <div class="mb-2">
+      {{ form.password.label(class="form-label small fw-semibold") }}
+      {{ form.password(class="form-control", placeholder="••••••••") }}
+    </div>
+    <div class="text-end mb-2">
+      <a href="{{ url_for('auth.forgot_password') }}" class="small text-muted">Forgot your password?</a>
+    </div>
+    {{ form.submit(class="btn btn-primary w-100 mt-2") }}
+  </form>
+  <div class="text-center mt-4" style="font-size:.75rem; color:#98a2b3;">
+    Employees: first login uses the temporary password <strong>Pass</strong> — you'll be asked to set a new one.
+  </div>
+{% endblock %}

@@ -1,0 +1,918 @@
+{% extends "layouts/base.html" %}
+{% block title %}{{ meeting.title }} — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+  <div class="mb-2 d-flex align-items-center justify-content-between">
+    <a href="{{ url_for('meetings.list_view') }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Meetings</a>
+    <a href="{{ url_for('meetings.history', meeting_id=meeting.id) }}" class="text-muted small"><i class="bi bi-clock-history me-1"></i>History</a>
+  </div>
+
+  <div class="md-card mb-3">
+    <div class="md-card-body d-flex align-items-start justify-content-between flex-wrap gap-3">
+      <div>
+        <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+          <h5 class="fw-bold mb-0">{{ meeting.title }}</h5>
+          <span class="status-badge status-{{ badge_class(meeting.status.value, MEETING_STATUS_BADGE) }}">{{ meeting.status.value.replace('_',' ') }}</span>
+          {% if meeting.confidentiality_level.value != 'NORMAL' %}
+            <span class="status-badge status-hold"><i class="bi bi-lock"></i> {{ meeting.confidentiality_level.value.title() }}</span>
+          {% endif %}
+          {% set entity_type = "MEETING" %}
+          {% set entity_id = meeting.id %}
+          {% include "components/_tag_widget.html" %}
+        </div>
+        <div class="text-muted" style="font-size:.83rem;">
+          {{ meeting.start_datetime.strftime('%A, %d %B %Y') }} &middot;
+          {{ meeting.start_datetime.strftime('%I:%M %p') }} - {{ meeting.end_datetime.strftime('%I:%M %p') }}
+          {% if meeting.location %} &middot; {{ meeting.location }}{% endif %}
+          {% if meeting.organizer %} &middot; Organizer: {{ meeting.organizer }}{% endif %}
+          {% if attendees %} &middot; <i class="bi bi-people me-1"></i>{{ attendees|length }} participant{{ 's' if attendees|length != 1 else '' }}{% endif %}
+        </div>
+        {% if attendees %}
+          <div class="d-flex flex-wrap gap-1 mt-2">
+            {% for name in attendees %}
+              <span class="status-badge status-hold">{{ name }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      {% if is_ea %}
+        <div class="d-flex gap-2">
+          {% if meeting.status.value == 'SCHEDULED' %}
+            <form method="POST" action="{{ url_for('meetings.start', meeting_id=meeting.id) }}">
+              {{ note_form.csrf_token }}
+              <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-play-fill me-1"></i>Start Meeting</button>
+            </form>
+          {% elif meeting.status.value == 'IN_PROGRESS' %}
+            <button class="btn btn-success btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#completeMeetingModal">
+              <i class="bi bi-check-lg me-1"></i>Complete Meeting
+            </button>
+          {% elif meeting.status.value == 'COMPLETED' %}
+            <form method="POST" action="{{ url_for('meetings.reopen', meeting_id=meeting.id) }}">
+              {{ note_form.csrf_token }}
+              <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-arrow-counterclockwise me-1"></i>Reopen</button>
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <ul class="nav nav-tabs mb-3" id="workspaceTabs" role="tablist">
+    <li class="nav-item"><button class="nav-link {{ 'active' if not ai_suggestions else '' }}" data-bs-toggle="tab" data-bs-target="#tab-overview" type="button">Overview</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-notes" type="button">Notes <span class="badge bg-light text-dark">{{ meeting.notes|length }}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-decisions" type="button">Decisions <span class="badge bg-light text-dark">{{ meeting.decisions|length }}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-actions" type="button">Actions <span class="badge bg-light text-dark">{{ tasks|length }}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-activity" type="button">Activity</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if ai_suggestions else '' }}" data-bs-toggle="tab" data-bs-target="#tab-transcript" type="button" id="transcript-tab-btn"><i class="bi bi-stars me-1"></i>Transcript &amp; AI</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-followup" type="button"><i class="bi bi-envelope me-1"></i>Follow-up Email</button></li>
+    <li class="nav-item"><span class="nav-link disabled">Files <span class="nav-soon">Soon</span></span></li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- OVERVIEW -->
+    <div class="tab-pane fade {{ 'show active' if not ai_suggestions else '' }}" id="tab-overview">
+      {% if is_ea %}
+        <div class="md-card mb-3">
+          <div class="md-card-header"><h6><i class="bi bi-pencil-square me-2 text-primary"></i>Quick Capture</h6></div>
+          <div class="md-card-body">
+            <div class="text-muted mb-2" style="font-size:.82rem;">
+              Type what's happening in the meeting in one go — the AI will split it into Notes, Decisions and Action Items for you to review below, instead of filing each one separately.
+            </div>
+            <div id="quickCaptureDraftNotice" hidden class="text-muted mb-2" style="font-size:.76rem;">
+              <i class="bi bi-arrow-counterclockwise me-1"></i>Restored an unsaved draft from before.
+            </div>
+            <form method="POST" action="{{ url_for('meetings.split_notes', meeting_id=meeting.id) }}">
+              {{ note_form.csrf_token }}
+              <textarea name="source_text" id="quickCaptureText" class="form-control mb-2" rows="5"
+                        placeholder="e.g. Discussed Q3 budget. Decided to increase marketing spend by 10%. John to send revised numbers by Friday..."></textarea>
+              <button type="submit" class="btn btn-sm btn-primary" {{ 'disabled' if not ai_configured else '' }}>
+                <i class="bi bi-stars me-1"></i>Split into Notes, Decisions &amp; Actions
+              </button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if notes_draft %}
+        <div class="md-card mb-3">
+          <div class="md-card-header">
+            <h6>Review Draft</h6>
+            <span class="status-badge status-hold">AI Generated — Review Before Saving</span>
+          </div>
+          <div class="md-card-body">
+            <form method="POST" action="{{ url_for('meetings.save_notes_draft', meeting_id=meeting.id) }}">
+              {{ note_form.csrf_token }}
+              <input type="hidden" name="note_count" value="{{ notes_draft.notes|length }}">
+              <input type="hidden" name="decision_count" value="{{ notes_draft.decisions|length }}">
+              <input type="hidden" name="action_count" value="{{ notes_draft.actions|length }}">
+
+              <div class="mb-3">
+                <div class="fw-semibold mb-2" style="font-size:.85rem;">Notes</div>
+                {% if notes_draft.notes %}
+                  <div class="d-flex flex-column gap-2">
+                    {% for n in notes_draft.notes %}
+                      <div class="d-flex gap-2 align-items-start draft-row">
+                        <input type="text" name="note_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ n }}">
+                        <button type="button" class="btn btn-sm btn-link text-danger p-0 remove-draft-row" title="Remove"><i class="bi bi-x-circle"></i></button>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="text-muted small">No general notes detected.</div>
+                {% endif %}
+              </div>
+
+              <div class="mb-3">
+                <div class="fw-semibold mb-2" style="font-size:.85rem;">Decisions</div>
+                {% if notes_draft.decisions %}
+                  <div class="d-flex flex-column gap-2">
+                    {% for d in notes_draft.decisions %}
+                      <div class="d-flex gap-2 align-items-start draft-row">
+                        <input type="text" name="decision_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ d }}">
+                        <button type="button" class="btn btn-sm btn-link text-danger p-0 remove-draft-row" title="Remove"><i class="bi bi-x-circle"></i></button>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="text-muted small">No decisions detected.</div>
+                {% endif %}
+              </div>
+
+              <div class="mb-3">
+                <div class="fw-semibold mb-2" style="font-size:.85rem;">Action Items</div>
+                {% if notes_draft.actions %}
+                  <div class="d-flex flex-column gap-3">
+                    {% for suggestion in notes_draft.actions %}
+                      <div class="border rounded p-3">
+                        <div class="form-check mb-2">
+                          <input type="checkbox" class="form-check-input" name="action_{{ loop.index0 }}_selected" value="1" id="dsel_{{ loop.index0 }}" checked>
+                          <label class="form-check-label fw-semibold" for="dsel_{{ loop.index0 }}" style="font-size:.87rem;">Create this action item</label>
+                        </div>
+                        <div class="row g-2">
+                          <div class="col-md-6">
+                            <label class="form-label small">Title</label>
+                            <input type="text" name="action_{{ loop.index0 }}_title" class="form-control form-control-sm" value="{{ suggestion.title }}">
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label small">Description</label>
+                            <input type="text" name="action_{{ loop.index0 }}_description" class="form-control form-control-sm" value="{{ suggestion.description or '' }}">
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label small">Assigned To</label>
+                            <select class="form-select form-select-sm ai-employee-picker" name="action_{{ loop.index0 }}_employee_codes" multiple></select>
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label small">Due Date</label>
+                            <input type="date" name="action_{{ loop.index0 }}_due_date" class="form-control form-control-sm">
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label small">Priority</label>
+                            <select name="action_{{ loop.index0 }}_priority" class="form-select form-select-sm">
+                              {% for p in ['LOW','MEDIUM','HIGH','CRITICAL'] %}
+                                <option value="{{ p }}" {{ 'selected' if p == suggestion.priority else '' }}>{{ p.title() }}</option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="text-muted small">No action items detected.</div>
+                {% endif %}
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2-circle me-1"></i>Save Draft</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if prep_brief %}
+        <div class="md-card mb-3">
+          <div class="md-card-header">
+            <h6><i class="bi bi-journal-text me-2 text-primary"></i>Prep Brief</h6>
+            <span class="text-muted" style="font-size:.78rem;">
+              Carried over from "{{ prep_brief.previous_meeting.title }}" on {{ prep_brief.previous_meeting.start_datetime.strftime('%d %b %Y') }}
+            </span>
+          </div>
+          <div class="md-card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="fw-semibold mb-2" style="font-size:.85rem;">Still Open From Last Time</div>
+                {% if prep_brief.open_actions %}
+                  <div class="d-flex flex-column gap-2">
+                    {% for task in prep_brief.open_actions %}
+                      <a href="{{ url_for('tasks.detail', task_id=task.id) }}" class="d-flex justify-content-between text-decoration-none text-dark border-bottom pb-2">
+                        <div>
+                          <div style="font-size:.85rem;">{{ task.title }}</div>
+                          <div class="text-muted" style="font-size:.75rem;">{{ prep_brief.assignees_by_task.get(task.id, [])|join(', ') or 'Unassigned' }}</div>
+                        </div>
+                        <span class="status-badge status-{{ badge_class(task.status.value, TASK_STATUS_BADGE) }}">{{ task.status.value.replace('_',' ') }}</span>
+                      </a>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="text-muted small">Nothing still open — all actions from last time are done.</div>
+                {% endif %}
+              </div>
+              <div class="col-md-6">
+                <div class="fw-semibold mb-2" style="font-size:.85rem;">Decisions From Last Time</div>
+                {% if prep_brief.decisions %}
+                  <div class="d-flex flex-column gap-2">
+                    {% for decision in prep_brief.decisions %}
+                      <div class="border-bottom pb-2" style="font-size:.85rem;">{{ decision.decision_text }}</div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="text-muted small">No decisions were recorded last time.</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+      <div class="row g-3">
+        <div class="col-lg-8">
+          <div class="md-card">
+            <div class="md-card-header"><h6>Description</h6></div>
+            <div class="md-card-body">
+              {% if meeting.description %}
+                <p style="font-size:.87rem; white-space: pre-line;">{{ meeting.description }}</p>
+              {% else %}
+                <div class="text-muted small">No description added.</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="md-card">
+            <div class="md-card-header"><h6>Meeting Completion Checklist</h6></div>
+            <div class="md-card-body" style="font-size:.85rem;">
+              {% for label, key in [('Notes captured','notes_captured'), ('Decisions captured','decisions_captured'), ('Actions assigned','actions_assigned'), ('Due dates added','due_dates_added')] %}
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span>{{ label }}</span>
+                  {% if checklist[key] %}
+                    <i class="bi bi-check-circle-fill text-success"></i>
+                  {% else %}
+                    <i class="bi bi-exclamation-circle text-warning"></i>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="md-card mt-3">
+            <div class="md-card-header"><h6>Related Projects</h6></div>
+            <div class="md-card-body">
+              {% if is_ea and available_projects %}
+                <form method="POST" action="{{ url_for('meetings.tag_project', meeting_id=meeting.id) }}" class="d-flex gap-2 mb-2">
+                  {{ note_form.csrf_token }}
+                  <select name="project_id" class="form-select form-select-sm">
+                    {% for p in available_projects %}
+                      <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-link-45deg me-1"></i>Tag</button>
+                </form>
+              {% endif %}
+              {% if tagged_projects %}
+                {% for link in meeting_project_links %}
+                  <div class="d-flex justify-content-between align-items-center py-1">
+                    <a href="{{ url_for('projects.detail', project_id=link.project.id) }}" style="font-size:.85rem;">{{ link.project.name }}</a>
+                    {% if is_ea %}
+                      <form method="POST" action="{{ url_for('meetings.untag_project', meeting_id=meeting.id, link_id=link.id) }}">
+                        {{ note_form.csrf_token }}
+                        <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Untag"><i class="bi bi-x-circle"></i></button>
+                      </form>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              {% else %}
+                <div class="text-muted small">No related projects tagged.</div>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if is_ea %}
+            <div class="md-card mt-3">
+              <div class="md-card-header"><h6>Save as Template</h6></div>
+              <div class="md-card-body">
+                <div class="text-muted mb-2" style="font-size:.78rem;">Reuse this meeting's title, type, location and duration next time — for a recurring series like a weekly review.</div>
+                <form method="POST" action="{{ url_for('meetings.save_as_template', meeting_id=meeting.id) }}" class="d-flex gap-2">
+                  {{ note_form.csrf_token }}
+                  <input type="text" name="template_name" class="form-control form-control-sm" placeholder="e.g. Weekly Ops Review" required>
+                  <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap"><i class="bi bi-bookmark-plus me-1"></i>Save</button>
+                </form>
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES -->
+    <div class="tab-pane fade" id="tab-notes">
+      <div class="md-card">
+        <div class="md-card-body">
+          {% if is_ea %}
+            <form method="POST" action="{{ url_for('meetings.add_note', meeting_id=meeting.id) }}" class="d-flex gap-2 mb-3">
+              {{ note_form.csrf_token }}
+              {{ note_form.note_text(class="form-control form-control-sm", placeholder="Type a note and press Add...") }}
+              <button type="submit" class="btn btn-primary btn-sm text-nowrap"><i class="bi bi-plus-lg me-1"></i>Add</button>
+            </form>
+          {% endif %}
+          {% if meeting.notes %}
+            <ol class="mb-0 list-unstyled" style="font-size:.87rem;">
+              {% for note in meeting.notes %}
+                <li class="mb-2 d-flex justify-content-between align-items-start">
+                  <span><strong class="text-primary me-1">{{ loop.index }}.</strong>{{ note.note_text }}</span>
+                  {% if is_ea %}
+                    <div class="d-flex align-items-center gap-1 ms-2 text-nowrap">
+                      <button type="button" class="btn btn-sm btn-link text-primary p-0 convert-to-action-btn"
+                              data-note-id="{{ note.id }}" data-note-text="{{ note.note_text }}"
+                              title="Convert to Action"><i class="bi bi-list-check"></i></button>
+                      <form method="POST" action="{{ url_for('meetings.convert_note_to_decision', meeting_id=meeting.id, note_id=note.id) }}">
+                        {{ note_form.csrf_token }}
+                        <button type="submit" class="btn btn-sm btn-link text-primary p-0" title="Convert to Decision"><i class="bi bi-check2-square"></i></button>
+                      </form>
+                      <form method="POST" action="{{ url_for('meetings.delete_note', meeting_id=meeting.id, note_id=note.id) }}">
+                        {{ note_form.csrf_token }}
+                        <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Delete"><i class="bi bi-trash"></i></button>
+                      </form>
+                    </div>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ol>
+          {% else %}
+            <div class="empty-state py-3"><i class="bi bi-journal-text"></i><div>No notes captured yet.</div></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- DECISIONS -->
+    <div class="tab-pane fade" id="tab-decisions">
+      <div class="md-card">
+        <div class="md-card-body">
+          {% if is_ea %}
+            <form method="POST" action="{{ url_for('meetings.add_decision', meeting_id=meeting.id) }}" class="d-flex gap-2 mb-3">
+              {{ decision_form.csrf_token }}
+              {{ decision_form.decision_text(class="form-control form-control-sm", rows=2, placeholder="Record a decision made in this meeting...") }}
+              <button type="submit" class="btn btn-primary btn-sm text-nowrap align-self-start"><i class="bi bi-plus-lg me-1"></i>Add</button>
+            </form>
+          {% endif %}
+          {% if meeting.decisions %}
+            <div class="d-flex flex-column gap-2">
+              {% for decision in meeting.decisions %}
+                <div class="border-start border-3 border-primary ps-3 py-1" style="font-size:.87rem;">
+                  <div><strong class="text-primary me-1">{{ loop.index }}.</strong>{{ decision.decision_text }}</div>
+                  <div class="text-muted" style="font-size:.72rem;">{{ decision.decision_date.strftime('%d %b %Y, %I:%M %p') }} &middot; {{ decision.created_by }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty-state py-3"><i class="bi bi-check2-square"></i><div>No decisions recorded yet.</div></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="tab-pane fade" id="tab-actions">
+      {% if is_ea %}
+        <div class="mb-3">
+          <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newActionModal">
+            <i class="bi bi-plus-lg me-1"></i>New Action
+          </button>
+        </div>
+      {% endif %}
+
+      {% if tasks %}
+        <div class="d-flex flex-column gap-2">
+          {% for task in tasks %}
+            <div class="md-card">
+              <div class="md-card-body">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                  <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      <span class="fw-semibold" style="font-size:.9rem;">{{ task.title }}</span>
+                      <span class="status-badge status-{{ badge_class(task.priority.value, PRIORITY_BADGE) }}">{{ task.priority.value }}</span>
+                      <span class="status-badge status-{{ badge_class(task.status.value, TASK_STATUS_BADGE) }}">{{ task.status.value.replace('_',' ') }}</span>
+                      {% if task.is_overdue %}<span class="status-badge status-overdue">OVERDUE</span>{% endif %}
+                    </div>
+                    {% if task.description %}<div class="text-muted mb-1" style="font-size:.8rem;">{{ task.description }}</div>{% endif %}
+                    <div class="text-muted" style="font-size:.78rem;">
+                      <i class="bi bi-people me-1"></i>{{ assignees_by_task.get(task.id, [])|join(', ') or 'Unassigned' }}
+                      {% if task.due_date %} &middot; <i class="bi bi-calendar-event me-1"></i>Due {{ task.due_date.strftime('%d %b %Y') }}{% endif %}
+                    </div>
+                  </div>
+                  {% if is_ea %}
+                    <form method="POST" action="{{ url_for('tasks.update_status', task_id=task.id) }}" class="d-flex align-items-center gap-1">
+                      {{ note_form.csrf_token }}
+                      <select name="status" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+                        {% for s in ['OPEN','IN_PROGRESS','COMPLETED','ON_HOLD','CANCELLED'] %}
+                          <option value="{{ s }}" {{ 'selected' if task.status.value == s else '' }}>{{ s.replace('_',' ').title() }}</option>
+                        {% endfor %}
+                      </select>
+                    </form>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="md-card"><div class="empty-state py-4"><i class="bi bi-list-check"></i><div>No actions created for this meeting yet.</div></div></div>
+      {% endif %}
+    </div>
+
+    <!-- ACTIVITY -->
+    <div class="tab-pane fade" id="tab-activity">
+      <div class="md-card">
+        <div class="md-card-body">
+          {% if activity_entries %}
+            {% for entry in activity_entries %}
+              <div class="roadmap-item">
+                <span class="roadmap-badge">{{ entry.performed_at.strftime('%d %b, %I:%M %p') }}</span>
+                <div>
+                  <div class="name">{{ entry.action_type.replace('_',' ').title() }}</div>
+                  <div class="detail">by {{ entry.performed_by }}{% if entry.new_value %} — {{ entry.new_value }}{% endif %}</div>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty-state py-3"><i class="bi bi-clock-history"></i><div>No activity recorded yet.</div></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- TRANSCRIPT & AI -->
+    <div class="tab-pane fade {{ 'show active' if ai_suggestions else '' }}" id="tab-transcript">
+      {% if not ai_configured %}
+        <div class="md-card mb-3">
+          <div class="empty-state py-4">
+            <i class="bi bi-stars"></i>
+            <div class="fw-semibold mb-1">AI features aren't configured yet</div>
+            <div style="font-size:.83rem;">An administrator needs to set <code>OPENAI_API_KEY</code> in <code>.env</code>. See the README's AI Tools setup section.</div>
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="md-card mb-3">
+        <div class="md-card-header"><h6><span class="step-badge">1</span><i class="bi bi-mic me-2 text-primary"></i>Meeting Audio</h6></div>
+        <div class="md-card-body">
+          {% if latest_audio %}
+            <div class="text-muted mb-2" style="font-size:.83rem;">
+              <i class="bi bi-file-earmark-music me-1"></i>{{ latest_audio.original_filename }}
+              &middot; {{ (latest_audio.file_size / 1048576)|round(1) }} MB
+              &middot; uploaded {{ latest_audio.uploaded_at.strftime('%d %b %Y, %I:%M %p') }}
+            </div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <audio controls preload="metadata" class="w-100" style="max-width:480px;height:36px;"
+                     src="{{ url_for('meetings.audio_file', meeting_id=meeting.id, attachment_id=latest_audio.id) }}">
+              </audio>
+              {% if is_ea %}
+                <form method="POST" action="{{ url_for('meetings.delete_audio', meeting_id=meeting.id, attachment_id=latest_audio.id) }}"
+                      onsubmit="return confirm('Remove this audio file? This cannot be undone — any transcript already generated is kept.');">
+                  {{ note_form.csrf_token }}
+                  <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap" title="Remove audio"><i class="bi bi-trash3"></i></button>
+                </form>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if is_ea %}
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <form method="POST" action="{{ url_for('meetings.upload_audio', meeting_id=meeting.id) }}" enctype="multipart/form-data" class="d-flex gap-2 flex-grow-1">
+                {{ note_form.csrf_token }}
+                <input type="file" name="audio_file" accept=".mp3,.wav,.m4a,.webm,.ogg,.oga,.opus,.flac,.mp4,.mpeg,.mpga,.aac,.3gp,.amr" class="form-control form-control-sm">
+                <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">{{ 'Replace Audio' if latest_audio else 'Upload Audio' }}</button>
+              </form>
+              {% if latest_audio %}
+                <form method="POST" action="{{ url_for('meetings.transcribe', meeting_id=meeting.id) }}">
+                  {{ note_form.csrf_token }}
+                  <button type="submit" class="btn btn-sm btn-primary text-nowrap" {{ 'disabled' if not ai_configured else '' }}>
+                    <i class="bi bi-stars me-1"></i>Generate Transcript
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if meeting.transcript %}
+        <div class="md-card mb-3">
+          <div class="md-card-header">
+            <h6><span class="step-badge">2</span>Transcript</h6>
+            {% if not meeting.transcript.edited_by %}<span class="status-badge status-hold">AI Generated — Review Before Using</span>{% endif %}
+          </div>
+          <div class="md-card-body">
+            <form method="POST" action="{{ url_for('meetings.save_transcript', meeting_id=meeting.id) }}" id="transcriptForm">
+              {{ note_form.csrf_token }}
+              <textarea name="transcript_text" id="transcriptText" class="form-control mb-2" rows="8" {{ 'readonly' if not is_ea else '' }} style="font-size:.85rem;">{{ meeting.transcript.transcript_text }}</textarea>
+            </form>
+            {% if is_ea %}
+              <form method="POST" action="{{ url_for('meetings.summarize', meeting_id=meeting.id) }}" id="generateSummaryForm">
+                {{ note_form.csrf_token }}
+              </form>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <button type="submit" form="transcriptForm" class="btn btn-sm btn-outline-primary">Save Edits</button>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-sm btn-light" onclick="document.getElementById('transcriptText').value='';">Clear</button>
+                  <button type="submit" form="generateSummaryForm" class="btn btn-sm btn-primary" {{ 'disabled' if not ai_configured else '' }}>
+                    <i class="bi bi-stars me-1"></i>Generate Summary
+                  </button>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if meeting.summary %}
+        <div class="md-card mb-3">
+          <div class="md-card-header">
+            <h6><span class="step-badge">3</span>AI Summary</h6>
+            {% if not meeting.summary.edited_by %}<span class="status-badge status-hold">AI Generated — Review Before Using</span>{% endif %}
+          </div>
+          <div class="md-card-body">
+            <form method="POST" action="{{ url_for('meetings.save_summary', meeting_id=meeting.id) }}" id="summaryForm">
+              {{ note_form.csrf_token }}
+              <textarea name="summary_text" id="summaryText" class="form-control mb-2" rows="10" {{ 'readonly' if not is_ea else '' }} style="font-size:.85rem;">{{ meeting.summary.summary_text }}</textarea>
+            </form>
+            {% if is_ea %}
+              <form method="POST" action="{{ url_for('meetings.extract_actions', meeting_id=meeting.id) }}" id="extractActionsForm">
+                {{ note_form.csrf_token }}
+              </form>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <button type="submit" form="summaryForm" class="btn btn-sm btn-outline-primary">Save Edits</button>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-sm btn-light" onclick="document.getElementById('summaryText').value='';">Clear</button>
+                  <button type="submit" form="extractActionsForm" class="btn btn-sm btn-primary" {{ 'disabled' if not ai_configured else '' }}>
+                    <i class="bi bi-list-check me-1"></i>Extract Action Items
+                  </button>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if ai_suggestions %}
+        <div class="md-card">
+          <div class="md-card-header">
+            <h6><span class="step-badge">4</span><i class="bi bi-list-check me-2 text-primary"></i>Possible Action Items</h6>
+            <span class="status-badge status-hold">AI Generated — Review Before Saving</span>
+          </div>
+          <div class="md-card-body">
+            <form method="POST" action="{{ url_for('meetings.create_actions_from_ai', meeting_id=meeting.id) }}">
+              {{ note_form.csrf_token }}
+              <input type="hidden" name="suggestion_count" value="{{ ai_suggestions|length }}">
+              <div class="d-flex flex-column gap-3">
+                {% for suggestion in ai_suggestions %}
+                  <div class="border rounded p-3">
+                    <div class="form-check mb-2">
+                      <input type="checkbox" class="form-check-input" name="action_{{ loop.index0 }}_selected" value="1" id="msel_{{ loop.index0 }}" checked>
+                      <label class="form-check-label fw-semibold" for="msel_{{ loop.index0 }}" style="font-size:.87rem;">Create this action item</label>
+                    </div>
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <label class="form-label small">Title</label>
+                        <input type="text" name="action_{{ loop.index0 }}_title" class="form-control form-control-sm" value="{{ suggestion.title }}">
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label small">Description</label>
+                        <input type="text" name="action_{{ loop.index0 }}_description" class="form-control form-control-sm" value="{{ suggestion.description or '' }}">
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Assigned To</label>
+                        <select class="form-select form-select-sm ai-employee-picker" name="action_{{ loop.index0 }}_employee_codes" multiple></select>
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Due Date</label>
+                        <input type="date" name="action_{{ loop.index0 }}_due_date" class="form-control form-control-sm">
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Priority</label>
+                        <select name="action_{{ loop.index0 }}_priority" class="form-select form-select-sm">
+                          {% for p in ['LOW','MEDIUM','HIGH','CRITICAL'] %}
+                            <option value="{{ p }}" {{ 'selected' if p == suggestion.priority else '' }}>{{ p.title() }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-check2-circle me-1"></i>Create Selected Action Items</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- FOLLOW-UP EMAIL -->
+    <div class="tab-pane fade" id="tab-followup">
+      {% if is_ea %}
+        <div class="md-card mb-3">
+          <div class="md-card-header"><h6><i class="bi bi-envelope me-2 text-primary"></i>Follow-up Email</h6></div>
+          <div class="md-card-body">
+            <div class="text-muted mb-2" style="font-size:.82rem;">Drafts a "minutes of meeting" email from this meeting's notes, decisions and action items.</div>
+            <form method="POST" action="{{ url_for('meetings.draft_followup_email', meeting_id=meeting.id) }}">
+              {{ note_form.csrf_token }}
+              <button type="submit" class="btn btn-sm btn-primary" {{ 'disabled' if not ai_configured else '' }}>
+                <i class="bi bi-stars me-1"></i>{{ 'Regenerate' if meeting.followup_email else 'Draft' }} Follow-up Email
+              </button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if meeting.followup_email %}
+        <div class="md-card">
+          <div class="md-card-header">
+            <h6>Follow-up Email Draft</h6>
+            {% if not meeting.followup_email.edited_by %}<span class="status-badge status-hold">AI Generated — Review Before Sending</span>{% endif %}
+          </div>
+          <div class="md-card-body">
+            <form method="POST" action="{{ url_for('meetings.save_followup_email', meeting_id=meeting.id) }}">
+              {{ note_form.csrf_token }}
+              <label class="form-label small fw-semibold">To</label>
+              <input type="text" name="email_to" id="followupTo" class="form-control form-control-sm mb-2"
+                     placeholder="comma-separated recipient emails"
+                     value="{{ meeting.followup_email.to_emails or '' }}" {{ 'readonly' if not is_ea else '' }}>
+              <label class="form-label small fw-semibold">Subject</label>
+              <input type="text" name="email_subject" id="followupSubject" class="form-control form-control-sm mb-2"
+                     value="{{ meeting.followup_email.subject }}" {{ 'readonly' if not is_ea else '' }}>
+              <label class="form-label small fw-semibold">Body</label>
+              <textarea name="email_body" id="followupBody" class="form-control mb-2" rows="10" {{ 'readonly' if not is_ea else '' }}
+                        style="font-size:.85rem;">{{ meeting.followup_email.body_text }}</textarea>
+              {% if is_ea %}
+                <div class="d-flex gap-2 flex-wrap">
+                  <button type="submit" class="btn btn-sm btn-outline-primary">Save Edits</button>
+                  <button type="button" class="btn btn-sm btn-light" id="copyEmailBtn"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                  <a href="#" class="btn btn-sm btn-light" id="mailtoLink"><i class="bi bi-envelope-open me-1"></i>Open in Email Client</a>
+                </div>
+              {% endif %}
+            </form>
+          </div>
+        </div>
+      {% else %}
+        <div class="md-card">
+          <div class="empty-state py-4">
+            <i class="bi bi-envelope"></i>
+            <div class="fw-semibold mb-1">No follow-up email drafted yet</div>
+            <div style="font-size:.83rem;">Use the button above once this meeting has some notes, decisions or action items.</div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if is_ea %}
+    <!-- New Action Modal -->
+    <div class="modal fade" id="newActionModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('meetings.add_action', meeting_id=meeting.id) }}">
+          {{ action_form.hidden_tag() }}
+          <input type="hidden" name="source_note_id" id="actionSourceNoteId" value="">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-bold">New Action Item</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                {{ action_form.title.label(class="form-label small fw-semibold") }}
+                {{ action_form.title(class="form-control form-control-sm", id="actionTitleField") }}
+              </div>
+              <div class="mb-2">
+                {{ action_form.description.label(class="form-label small fw-semibold") }}
+                {{ action_form.description(class="form-control form-control-sm", rows=2) }}
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Assigned To</label>
+                <select id="assigneeSelect" name="employee_codes" multiple class="form-select form-select-sm"></select>
+              </div>
+              <div class="row g-2">
+                <div class="col-6">
+                  {{ action_form.due_date.label(class="form-label small fw-semibold") }}
+                  {{ action_form.due_date(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-6">
+                  {{ action_form.priority.label(class="form-label small fw-semibold") }}
+                  {{ action_form.priority(class="form-select form-select-sm") }}
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-sm btn-primary">Create Action</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Complete Meeting Modal -->
+    <div class="modal fade" id="completeMeetingModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h6 class="modal-title fw-bold">Complete this meeting?</h6>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" style="font-size:.85rem;">
+            {% for label, key in [('Meeting notes captured','notes_captured'), ('Decisions captured','decisions_captured'), ('Actions assigned','actions_assigned'), ('Due dates added','due_dates_added')] %}
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span>{{ label }}</span>
+                {% if checklist[key] %}
+                  <span class="status-badge status-completed">Done</span>
+                {% else %}
+                  <span class="status-badge status-hold">Not yet</span>
+                {% endif %}
+              </div>
+            {% endfor %}
+            <div class="text-muted mt-2" style="font-size:.8rem;">You can still add notes and actions after completing — this is just a reminder, not a hard requirement.</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+            <form method="POST" action="{{ url_for('meetings.complete', meeting_id=meeting.id) }}">
+              {{ note_form.csrf_token }}
+              <button type="submit" class="btn btn-sm btn-success">Yes, Complete Meeting</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var el = document.getElementById("assigneeSelect");
+      if (el) {
+        new TomSelect(el, {
+          valueField: "code",
+          labelField: "label",
+          searchField: "label",
+          placeholder: "Search employees by name or code...",
+          load: function (query, callback) {
+            if (query.length < 2) return callback();
+            fetch("{{ url_for('employees.search') }}?q=" + encodeURIComponent(query))
+              .then((r) => r.json())
+              .then((json) => callback(json))
+              .catch(() => callback());
+          },
+        });
+      }
+
+      document.querySelectorAll(".ai-employee-picker").forEach(function (picker) {
+        new TomSelect(picker, {
+          valueField: "code",
+          labelField: "label",
+          searchField: "label",
+          placeholder: "Search employees by name or code...",
+          load: function (query, callback) {
+            if (query.length < 2) return callback();
+            fetch("{{ url_for('employees.search') }}?q=" + encodeURIComponent(query))
+              .then((r) => r.json())
+              .then((json) => callback(json))
+              .catch(() => callback());
+          },
+        });
+      });
+
+      var copyEmailBtn = document.getElementById("copyEmailBtn");
+      var mailtoLink = document.getElementById("mailtoLink");
+      if (copyEmailBtn || mailtoLink) {
+        var toEl = document.getElementById("followupTo");
+        var subjectEl = document.getElementById("followupSubject");
+        var bodyEl = document.getElementById("followupBody");
+
+        // Normalizes whatever the EA typed ("a@x.com, b@y.com" / stray
+        // spaces / trailing commas) into a clean comma-joined address list.
+        function cleanedRecipients() {
+          return (toEl && toEl.value || "")
+            .split(",")
+            .map(function (s) { return s.trim(); })
+            .filter(Boolean)
+            .join(",");
+        }
+
+        if (copyEmailBtn) {
+          copyEmailBtn.addEventListener("click", function () {
+            var to = cleanedRecipients();
+            var text = (to ? "To: " + to + "\n" : "") + "Subject: " + subjectEl.value + "\n\n" + bodyEl.value;
+            navigator.clipboard.writeText(text).then(function () {
+              var original = copyEmailBtn.innerHTML;
+              copyEmailBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+              setTimeout(function () { copyEmailBtn.innerHTML = original; }, 1500);
+            });
+          });
+        }
+
+        if (mailtoLink) {
+          mailtoLink.addEventListener("click", function (e) {
+            e.preventDefault();
+            var params = "subject=" + encodeURIComponent(subjectEl.value) + "&body=" + encodeURIComponent(bodyEl.value);
+            window.open("mailto:" + cleanedRecipients() + "?" + params, "_blank");
+          });
+        }
+      }
+
+      document.querySelectorAll(".remove-draft-row").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          // The removed input's name (note_0, decision_2, ...) is simply
+          // absent from the submitted form — the save route already skips
+          // blank/missing entries, so no re-indexing is needed.
+          btn.closest(".draft-row").remove();
+        });
+      });
+
+      // "Convert to Action" on a note: pre-fills the existing New Action
+      // modal (title + a hidden source_note_id) instead of duplicating
+      // that form — the note itself is only removed once an assignee is
+      // actually picked and the action is created (see meetings.add_action).
+      var actionTitleField = document.getElementById("actionTitleField");
+      var actionSourceNoteId = document.getElementById("actionSourceNoteId");
+      var newActionModalEl = document.getElementById("newActionModal");
+      document.querySelectorAll(".convert-to-action-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (actionTitleField) actionTitleField.value = btn.dataset.noteText || "";
+          if (actionSourceNoteId) actionSourceNoteId.value = btn.dataset.noteId || "";
+          if (newActionModalEl && window.bootstrap) {
+            bootstrap.Modal.getOrCreateInstance(newActionModalEl).show();
+          }
+        });
+      });
+      // Cancelling (or dismissing) the modal any other way clears the
+      // conversion state, so a later plain "New Action" click starts fresh.
+      if (newActionModalEl) {
+        newActionModalEl.addEventListener("hidden.bs.modal", function () {
+          if (actionSourceNoteId) actionSourceNoteId.value = "";
+        });
+      }
+    });
+  </script>
+
+  <script>
+    // Quick Capture autosave — protects against losing a long typed note to
+    // an accidental refresh/navigation before it's split & submitted.
+    // Client-side only (localStorage), scoped to this meeting, cleared once
+    // the text is actually submitted.
+    (function () {
+      var textarea = document.getElementById("quickCaptureText");
+      if (!textarea) return;
+      var storageKey = "quickCaptureDraft:{{ meeting.id }}";
+      var saveTimer = null;
+
+      try {
+        var saved = localStorage.getItem(storageKey);
+        if (saved && !textarea.value) {
+          textarea.value = saved;
+          var notice = document.getElementById("quickCaptureDraftNotice");
+          if (notice) notice.hidden = false;
+        }
+      } catch (e) {
+        // Private browsing / storage blocked — autosave just won't persist.
+      }
+
+      textarea.addEventListener("input", function () {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () {
+          try {
+            if (textarea.value) {
+              localStorage.setItem(storageKey, textarea.value);
+            } else {
+              localStorage.removeItem(storageKey);
+            }
+          } catch (e) {
+            // ignore — nothing to persist to
+          }
+        }, 400);
+      });
+
+      var form = textarea.closest("form");
+      if (form) {
+        form.addEventListener("submit", function () {
+          try {
+            localStorage.removeItem(storageKey);
+          } catch (e) {
+            // ignore
+          }
+        });
+      }
+    })();
+  </script>
+{% endblock %}

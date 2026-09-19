@@ -1,0 +1,74 @@
+<aside class="app-sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-text">
+      <div class="name">{{ product_name }}</div>
+      <div class="subtitle">{{ product_subtitle }}</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="sidebar-section-label">Main</div>
+    <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('dashboard.') else '' }}"
+       href="{{ url_for('dashboard.index') }}">
+      <i class="bi bi-grid-1x2"></i><span class="nav-label">Dashboard</span>
+    </a>
+
+    {% if current_user.role.value in ('MD', 'EA') %}
+      <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('calendar.') else '' }}" href="{{ url_for('calendar.status') }}">
+        <i class="bi bi-calendar3"></i><span class="nav-label">Calendar</span>
+      </a>
+      <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('corporate_calendar.') else '' }}" href="{{ url_for('corporate_calendar.index') }}">
+        <i class="bi bi-building"></i><span class="nav-label">Corporate Calendar</span>
+      </a>
+      <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('meetings.') else '' }}" href="{{ url_for('meetings.list_view') }}">
+        <i class="bi bi-people"></i><span class="nav-label">Meetings</span>
+      </a>
+      <a class="nav-item {{ 'active' if request.endpoint == 'tasks.tracker' else '' }}" href="{{ url_for('tasks.tracker') }}">
+        <i class="bi bi-check2-square"></i><span class="nav-label">Action Tracker</span>
+      </a>
+      <a class="nav-item {{ 'active' if request.endpoint == 'tasks.general_list' else '' }}" href="{{ url_for('tasks.general_list') }}">
+        <i class="bi bi-list-task"></i><span class="nav-label">Tasks</span>
+      </a>
+      <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('projects.') else '' }}" href="{{ url_for('projects.list_view') }}">
+        <i class="bi bi-kanban"></i><span class="nav-label">Projects</span>
+      </a>
+      <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('tags.') else '' }}" href="{{ url_for('tags.master') }}">
+        <i class="bi bi-tags"></i><span class="nav-label">Tags</span>
+      </a>
+      {% if current_user.role.value == 'EA' %}
+        <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('employees.') else '' }}" href="{{ url_for('employees.list_view') }}">
+          <i class="bi bi-person-badge"></i><span class="nav-label">Employees</span>
+        </a>
+      {% else %}
+        <a class="nav-item disabled" href="#" title="EA only"><i class="bi bi-person-badge"></i><span class="nav-label">Employees</span></a>
+      {% endif %}
+
+      <div class="sidebar-section-label">Intelligence</div>
+      {% if current_user.role.value == 'EA' %}
+        <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('ai_tools.') else '' }}" href="{{ url_for('ai_tools.index') }}">
+          <i class="bi bi-stars"></i><span class="nav-label">AI Tools</span>
+        </a>
+      {% else %}
+        <a class="nav-item disabled" href="#" title="EA only"><i class="bi bi-stars"></i><span class="nav-label">AI Tools</span></a>
+      {% endif %}
+      <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('reports.') else '' }}" href="{{ url_for('reports.index') }}">
+        <i class="bi bi-bar-chart"></i><span class="nav-label">Reports</span>
+      </a>
+
+      <div class="sidebar-section-label">System</div>
+      <a class="nav-item disabled" href="#"><i class="bi bi-gear"></i><span class="nav-label">Settings</span><span class="nav-soon">Soon</span></a>
+    {% else %}
+      <a class="nav-item {{ 'active' if request.endpoint in ('tasks.mine', 'tasks.detail') else '' }}" href="{{ url_for('tasks.mine') }}">
+        <i class="bi bi-check2-square"></i><span class="nav-label">My Tasks</span>
+      </a>
+      <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('corporate_calendar.') else '' }}" href="{{ url_for('corporate_calendar.mine') }}">
+        <i class="bi bi-building"></i><span class="nav-label">Corporate Calendar</span>
+      </a>
+      <a class="nav-item disabled" href="#"><i class="bi bi-kanban"></i><span class="nav-label">My Projects</span><span class="nav-soon">Soon</span></a>
+    {% endif %}
+  </nav>
+
+  <div class="sidebar-footer">
+    <span class="nav-label">&copy; {{ current_year }} {{ product_name }}</span>
+  </div>
+</aside>

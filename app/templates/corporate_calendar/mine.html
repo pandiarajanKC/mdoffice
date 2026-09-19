@@ -1,0 +1,199 @@
+{% extends "layouts/base.html" %}
+{% block title %}Corporate Calendar — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <style>
+    /* Section styling for the event-form fragment injected into the modal
+       below — shared with the full-page fallback (event_form.html), which
+       carries the same rules via its own extra_head block. */
+    .form-section-title { font-size: .95rem; font-weight: 700; margin-bottom: .1rem; }
+    .form-section-sub { font-size: .78rem; color: var(--md-text-muted, #7a8299); margin-bottom: .9rem; }
+    .radio-stack .form-check { margin-bottom: .35rem; }
+    .radio-inline-group { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+    .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .35rem .75rem; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="cal-hero d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+    <div>
+      <h4 class="fw-bold mb-1">Corporate Calendar</h4>
+      <div class="text-muted" style="font-size:.85rem;">
+        Only your own events are shown here — click or drag a day to add one, or click an event to open and edit it.
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" id="newEventBtn"><i class="bi bi-plus-lg me-1"></i>New Event</button>
+  </div>
+
+  <div class="cal-layout">
+    <div class="md-card">
+      <div class="md-card-body">
+        <div class="cal-toolbar">
+          <div class="cal-toolbar-left">
+            <button type="button" class="cal-today-btn" id="calToday">Today</button>
+            <button type="button" class="cal-nav-btn" id="calPrev" aria-label="Previous"><i class="bi bi-chevron-left"></i></button>
+            <button type="button" class="cal-nav-btn" id="calNext" aria-label="Next"><i class="bi bi-chevron-right"></i></button>
+            <span class="cal-toolbar-title" id="calTitle"></span>
+          </div>
+          <div class="cal-view-tabs" id="calViewTabs">
+            <button type="button" class="cal-view-tab active" data-view="dayGridMonth">Month</button>
+            <button type="button" class="cal-view-tab" data-view="timeGridWeek">Week</button>
+            <button type="button" class="cal-view-tab" data-view="dayGridDay">Day</button>
+            <button type="button" class="cal-view-tab" data-view="listWeek">Agenda</button>
+          </div>
+        </div>
+        <div id="calendar"></div>
+      </div>
+    </div>
+
+    <div class="md-card">
+      <div class="md-card-body">
+        <div class="cal-agenda-date" id="agendaDate"></div>
+        <div class="cal-agenda-label">Today's agenda</div>
+        <div id="agendaList"></div>
+
+        <div class="cal-cta">
+          <p>Got a division event to put on the record? Add it here so EA and MD can see it.</p>
+          <button type="button" class="btn btn-sm w-100" id="ctaNewEventBtn"><i class="bi bi-plus-lg me-1"></i>Add Event</button>
+        </div>
+
+        <div class="cal-agenda-label mb-2">Priority</div>
+        <div class="cal-legend">
+          <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:var(--md-danger);"></span>Critical</span>
+          <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:var(--md-warning);"></span>High</span>
+          <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:var(--md-sky);"></span>Standard</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="eventModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold" id="eventModalTitle">New Event</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="eventModalBody"></div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const createUrl = "{{ url_for('corporate_calendar.create') }}";
+      // Built with a placeholder id (0) and string-replaced per event below,
+      // so the blueprint's real url_prefix never needs hardcoding here.
+      const editUrlTemplate = "{{ url_for('corporate_calendar.edit', event_id=0) }}";
+      const rescheduleUrlTemplate = "{{ url_for('corporate_calendar.reschedule', event_id=0) }}";
+      const csrfToken = "{{ csrf_token() }}";
+
+      function pad(n) { return String(n).padStart(2, "0"); }
+      function toDateOnlyStr(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+      function dayBefore(d) {
+        const copy = new Date(d.getTime());
+        copy.setDate(copy.getDate() - 1);
+        return copy;
+      }
+
+      const modalEl = document.getElementById("eventModal");
+      const modalBody = document.getElementById("eventModalBody");
+      const modalTitle = document.getElementById("eventModalTitle");
+      const modal = new bootstrap.Modal(modalEl);
+
+      function openEventModal(url, title) {
+        modalTitle.textContent = title;
+        modalBody.innerHTML = '<div class="text-center py-5"><span class="spinner-border text-primary"></span></div>';
+        modal.show();
+        fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            modalBody.innerHTML = html;
+            wireCorporateEventForm(modalBody, {
+              onSaved: function () { modal.hide(); calendar.refetchEvents(); },
+              onDeleted: function () { modal.hide(); calendar.refetchEvents(); },
+              onCancel: function () { modal.hide(); },
+            });
+          });
+      }
+
+      document.getElementById("newEventBtn").addEventListener("click", function () {
+        openEventModal(createUrl, "New Event");
+      });
+      document.getElementById("ctaNewEventBtn").addEventListener("click", function () {
+        openEventModal(createUrl, "New Event");
+      });
+
+      const calendarEl = document.getElementById("calendar");
+      const titleEl = document.getElementById("calTitle");
+      const agendaListEl = document.getElementById("agendaList");
+      const viewTabs = document.querySelectorAll("#calViewTabs .cal-view-tab");
+
+      const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: "dayGridMonth",
+        headerToolbar: false,
+        height: "auto",
+        selectable: true,
+        editable: true,
+        events: "{{ url_for('corporate_calendar.my_events_json') }}",
+        select: function (info) {
+          // FullCalendar's selection end is exclusive — the day after the
+          // last day picked — so step it back one day before handing it to
+          // the create form's (inclusive) Event End Date field.
+          const endInclusive = dayBefore(info.end);
+          openEventModal(
+            createUrl + "?start=" + toDateOnlyStr(info.start) + "&end=" + toDateOnlyStr(endInclusive),
+            "New Event",
+          );
+        },
+        eventClick: function (info) {
+          openEventModal(editUrlTemplate.replace("/0/", "/" + info.event.id + "/"), "Edit Event");
+        },
+        eventDrop: function (info) {
+          reschedule(info.event, info.revert);
+        },
+        eventResize: function (info) {
+          reschedule(info.event, info.revert);
+        },
+        datesSet: function (info) { titleEl.textContent = info.view.title; },
+        eventsSet: function () {
+          renderCalendarAgenda(agendaListEl, eventsOverlappingToday(calendar), {
+            getMeta: function (event) { return event.extendedProps.eventTypeLabel; },
+            onClick: function (event) { openEventModal(editUrlTemplate.replace("/0/", "/" + event.id + "/"), "Edit Event"); },
+          });
+        },
+      });
+      calendar.render();
+
+      document.getElementById("agendaDate").textContent =
+        new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+
+      document.getElementById("calToday").addEventListener("click", function () { calendar.today(); });
+      document.getElementById("calPrev").addEventListener("click", function () { calendar.prev(); });
+      document.getElementById("calNext").addEventListener("click", function () { calendar.next(); });
+
+      viewTabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          calendar.changeView(tab.dataset.view);
+          viewTabs.forEach(function (t) { t.classList.remove("active"); });
+          tab.classList.add("active");
+        });
+      });
+
+      function reschedule(event, revert) {
+        const endInclusive = dayBefore(event.end || event.start);
+        fetch(rescheduleUrlTemplate.replace("/0/", "/" + event.id + "/"), {
+          method: "POST",
+          headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
+          body: JSON.stringify({ start: toDateOnlyStr(event.start), end: toDateOnlyStr(endInclusive) }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) { if (data.error) { alert(data.error); revert(); } })
+          .catch(function () { revert(); });
+      }
+    });
+  </script>
+{% endblock %}

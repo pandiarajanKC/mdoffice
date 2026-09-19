@@ -1,0 +1,593 @@
+{% extends "layouts/base.html" %}
+{% block title %}AI Tools — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+  <div class="mb-3">
+    <h4 class="fw-bold mb-1">AI Tools</h4>
+    <div class="text-muted" style="font-size:.85rem;">Ask AURA about live data, pull structure out of pasted text, or transcribe a voice recording.</div>
+  </div>
+
+  {% if not ai_configured %}
+    <div class="md-card mb-3">
+      <div class="empty-state py-4">
+        <i class="bi bi-stars"></i>
+        <div class="fw-semibold mb-1">AI features aren't configured yet</div>
+        <div style="font-size:.83rem;">An administrator needs to set <code>OPENAI_API_KEY</code> in <code>.env</code>. See the README's AI Tools setup section.</div>
+      </div>
+    </div>
+  {% endif %}
+
+  <ul class="nav nav-tabs mb-3" id="aiToolsTabs" role="tablist">
+    <li class="nav-item"><button class="nav-link {{ 'active' if active_tab == 'voice-chat' else '' }}" data-bs-toggle="tab" data-bs-target="#tab-voice-chat" type="button"><i class="bi bi-mic-fill me-1"></i>Voice Chat</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if active_tab == 'text' else '' }}" data-bs-toggle="tab" data-bs-target="#tab-text" type="button"><i class="bi bi-text-paragraph me-1"></i>Text Extractor</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if active_tab == 'voice-extract' else '' }}" data-bs-toggle="tab" data-bs-target="#tab-voice-extract" type="button"><i class="bi bi-soundwave me-1"></i>Voice Extractor</button></li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- VOICE CHAT (AURA) -->
+    <div class="tab-pane fade {{ 'show active' if active_tab == 'voice-chat' else '' }}" id="tab-voice-chat">
+      <div class="md-card assistant-card">
+        <div class="md-card-header"><h6><i class="bi bi-mic-fill me-2 text-primary"></i>AURA</h6></div>
+        <div class="md-card-body">
+          <div class="text-center">
+            <img id="auraAvatar" src="{{ url_for('static', filename='images/aura.png') }}" alt="AURA" class="aura-avatar">
+          </div>
+          <div class="text-muted mb-3 text-center" style="font-size:.82rem;">
+            Ask me anything about today's meetings, overdue tasks, project status, or workload — I'll answer out loud using real, current data.
+          </div>
+          <div id="assistantChat" class="assistant-chat mb-3"></div>
+          <div class="d-flex align-items-center gap-3">
+            <button type="button" id="assistantMicBtn" class="assistant-mic-btn" {{ 'disabled' if not ai_configured else '' }} title="Tap to ask a question">
+              <i class="bi bi-mic-fill"></i>
+            </button>
+            <div id="assistantStatus" class="text-muted" style="font-size:.85rem;">
+              {{ 'Tap the mic and speak clearly, close to your device — it stops listening on its own once you pause' if ai_configured else 'Set up OPENAI_API_KEY to enable this' }}
+            </div>
+          </div>
+          <audio id="assistantAudio" style="display:none;"></audio>
+        </div>
+      </div>
+    </div>
+
+    <!-- TEXT EXTRACTOR -->
+    <div class="tab-pane fade {{ 'show active' if active_tab == 'text' else '' }}" id="tab-text">
+      <div class="md-card mb-3">
+        <div class="md-card-body">
+          <div class="text-muted mb-2" style="font-size:.82rem;">Paste text from an email, WhatsApp, Word, or a chat — summarize it or pull out action items.</div>
+          <form method="POST" id="pasteForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">Paste text</label>
+              <textarea name="pasted_text" class="form-control" rows="8" placeholder="Paste an email thread, WhatsApp conversation, meeting notes, or any text here...">{{ pasted_text }}</textarea>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" formaction="{{ url_for('ai_tools.summarize') }}" class="btn btn-outline-primary btn-sm" {{ 'disabled' if not ai_configured else '' }}>
+                <i class="bi bi-text-paragraph me-1"></i>Summarize
+              </button>
+              <button type="submit" formaction="{{ url_for('ai_tools.extract_actions') }}" class="btn btn-primary btn-sm" {{ 'disabled' if not ai_configured else '' }}>
+                <i class="bi bi-list-check me-1"></i>Extract Action Items
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {% if summary %}
+        <div class="md-card mb-3">
+          <div class="md-card-header">
+            <h6><i class="bi bi-stars me-2 text-primary"></i>Summary</h6>
+            <span class="status-badge status-hold">AI Generated — Review Before Using</span>
+          </div>
+          <div class="md-card-body">
+            <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit; font-size:.85rem;">{{ summary }}</pre>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if suggestions %}
+        <div class="md-card">
+          <div class="md-card-header">
+            <h6><i class="bi bi-list-check me-2 text-primary"></i>Possible Action Items</h6>
+            <span class="status-badge status-hold">AI Generated — Review Before Saving</span>
+          </div>
+          <div class="md-card-body">
+            <form method="POST" action="{{ url_for('ai_tools.create_actions') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="suggestion_count" value="{{ suggestions|length }}">
+              <input type="hidden" name="redirect_tab" value="text">
+              <div class="d-flex flex-column gap-3">
+                {% for suggestion in suggestions %}
+                  <div class="border rounded p-3">
+                    <div class="form-check mb-2">
+                      <input type="checkbox" class="form-check-input" name="action_{{ loop.index0 }}_selected" value="1" id="sel_{{ loop.index0 }}" checked>
+                      <label class="form-check-label fw-semibold" for="sel_{{ loop.index0 }}" style="font-size:.87rem;">Create this action item</label>
+                    </div>
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <label class="form-label small">Title</label>
+                        <input type="text" name="action_{{ loop.index0 }}_title" class="form-control form-control-sm" value="{{ suggestion.title }}">
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label small">Description</label>
+                        <input type="text" name="action_{{ loop.index0 }}_description" class="form-control form-control-sm" value="{{ suggestion.description or '' }}">
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Assigned To</label>
+                        <select class="form-select form-select-sm employee-picker" name="action_{{ loop.index0 }}_employee_codes" multiple></select>
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Due Date</label>
+                        <input type="date" name="action_{{ loop.index0 }}_due_date" class="form-control form-control-sm">
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Priority</label>
+                        <select name="action_{{ loop.index0 }}_priority" class="form-select form-select-sm">
+                          {% for p in ['LOW','MEDIUM','HIGH','CRITICAL'] %}
+                            <option value="{{ p }}" {{ 'selected' if p == suggestion.priority else '' }}>{{ p.title() }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-check2-circle me-1"></i>Create Selected Action Items</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- VOICE EXTRACTOR -->
+    <div class="tab-pane fade {{ 'show active' if active_tab == 'voice-extract' else '' }}" id="tab-voice-extract">
+      <div class="md-card mb-3">
+        <div class="md-card-header"><h6><span class="step-badge">1</span><i class="bi bi-mic me-2 text-primary"></i>Audio Recording</h6></div>
+        <div class="md-card-body">
+          <div class="text-muted mb-2" style="font-size:.82rem;">Upload a voice memo, call recording, or WhatsApp voice note — the AI transcribes it, then you can summarize it or pull out action items, same as pasted text.</div>
+          <form method="POST" action="{{ url_for('ai_tools.transcribe_voice') }}" enctype="multipart/form-data" class="d-flex flex-wrap align-items-center gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="file" name="audio_file" accept=".mp3,.wav,.m4a,.webm,.ogg,.oga,.opus,.flac,.mp4,.mpeg,.mpga,.aac,.3gp,.amr" class="form-control form-control-sm" style="max-width:400px;">
+            <button type="submit" class="btn btn-sm btn-primary text-nowrap" {{ 'disabled' if not ai_configured else '' }}>
+              <i class="bi bi-stars me-1"></i>Generate Transcript
+            </button>
+          </form>
+          {% if voice_filename %}
+            <div class="text-muted mt-2" style="font-size:.78rem;"><i class="bi bi-file-earmark-music me-1"></i>{{ voice_filename }}</div>
+          {% endif %}
+          {% if voice_audio_available %}
+            <div class="d-flex align-items-center gap-2 mt-2">
+              <audio controls preload="metadata" style="max-width:400px;height:36px;" src="{{ url_for('ai_tools.voice_audio') }}?v={{ voice_filename|default('') }}">
+              </audio>
+              <button type="submit" form="voiceTranscriptForm" formaction="{{ url_for('ai_tools.clear_voice_audio') }}" formnovalidate
+                      class="btn btn-sm btn-outline-danger text-nowrap" title="Remove audio">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </div>
+            <div class="text-muted mt-1" style="font-size:.74rem;">Play it back and check it against the transcript below before summarizing or extracting action items.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if voice_transcript %}
+        <div class="md-card mb-3">
+          <div class="md-card-header">
+            <h6><span class="step-badge">2</span>Transcript</h6>
+            <div class="d-flex align-items-center gap-2">
+              <span class="status-badge status-hold">AI Generated — Review Before Using</span>
+              <a href="{{ url_for('ai_tools.index', tab='voice-extract') }}" class="btn btn-sm btn-outline-danger" title="Clear the transcript, summary and action items and start over">
+                <i class="bi bi-x-circle me-1"></i>Clear All
+              </a>
+            </div>
+          </div>
+          <div class="md-card-body">
+            <form method="POST" action="{{ url_for('ai_tools.summarize_voice') }}" id="voiceTranscriptForm">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <textarea name="voice_transcript_text" id="voiceTranscriptText" class="form-control mb-2" rows="8" style="font-size:.85rem;">{{ voice_transcript }}</textarea>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-light" onclick="document.getElementById('voiceTranscriptText').value='';" title="Clear just this text box, without leaving the page">Clear Text</button>
+                <div class="d-flex gap-2">
+                  <button type="submit" formaction="{{ url_for('ai_tools.summarize_voice') }}" class="btn btn-sm btn-outline-primary" {{ 'disabled' if not ai_configured else '' }}>
+                    <i class="bi bi-text-paragraph me-1"></i>Summarize
+                  </button>
+                  <button type="submit" formaction="{{ url_for('ai_tools.extract_actions_voice') }}" class="btn btn-sm btn-primary" {{ 'disabled' if not ai_configured else '' }}>
+                    <i class="bi bi-list-check me-1"></i>Extract Action Items
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if voice_summary %}
+        <div class="md-card mb-3">
+          <div class="md-card-header">
+            <h6><i class="bi bi-stars me-2 text-primary"></i>Summary</h6>
+            <span class="status-badge status-hold">AI Generated — Review Before Using</span>
+          </div>
+          <div class="md-card-body">
+            <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit; font-size:.85rem;">{{ voice_summary }}</pre>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if voice_suggestions %}
+        <div class="md-card">
+          <div class="md-card-header">
+            <h6><i class="bi bi-list-check me-2 text-primary"></i>Possible Action Items</h6>
+            <span class="status-badge status-hold">AI Generated — Review Before Saving</span>
+          </div>
+          <div class="md-card-body">
+            <form method="POST" action="{{ url_for('ai_tools.create_actions') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="suggestion_count" value="{{ voice_suggestions|length }}">
+              <input type="hidden" name="redirect_tab" value="voice-extract">
+              <div class="d-flex flex-column gap-3">
+                {% for suggestion in voice_suggestions %}
+                  <div class="border rounded p-3">
+                    <div class="form-check mb-2">
+                      <input type="checkbox" class="form-check-input" name="action_{{ loop.index0 }}_selected" value="1" id="vsel_{{ loop.index0 }}" checked>
+                      <label class="form-check-label fw-semibold" for="vsel_{{ loop.index0 }}" style="font-size:.87rem;">Create this action item</label>
+                    </div>
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <label class="form-label small">Title</label>
+                        <input type="text" name="action_{{ loop.index0 }}_title" class="form-control form-control-sm" value="{{ suggestion.title }}">
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label small">Description</label>
+                        <input type="text" name="action_{{ loop.index0 }}_description" class="form-control form-control-sm" value="{{ suggestion.description or '' }}">
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Assigned To</label>
+                        <select class="form-select form-select-sm voice-employee-picker" name="action_{{ loop.index0 }}_employee_codes" multiple></select>
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Due Date</label>
+                        <input type="date" name="action_{{ loop.index0 }}_due_date" class="form-control form-control-sm">
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small">Priority</label>
+                        <select name="action_{{ loop.index0 }}_priority" class="form-select form-select-sm">
+                          {% for p in ['LOW','MEDIUM','HIGH','CRITICAL'] %}
+                            <option value="{{ p }}" {{ 'selected' if p == suggestion.priority else '' }}>{{ p.title() }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-check2-circle me-1"></i>Create Selected Action Items</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      function employeePicker(el) {
+        new TomSelect(el, {
+          valueField: "code",
+          labelField: "label",
+          searchField: "label",
+          placeholder: "Search employees by name or code...",
+          load: function (query, callback) {
+            if (query.length < 2) return callback();
+            fetch("{{ url_for('employees.search') }}?q=" + encodeURIComponent(query))
+              .then((r) => r.json())
+              .then((json) => callback(json))
+              .catch(() => callback());
+          },
+        });
+      }
+      document.querySelectorAll(".employee-picker, .voice-employee-picker").forEach(employeePicker);
+
+      var micBtn = document.getElementById("assistantMicBtn");
+      var statusEl = document.getElementById("assistantStatus");
+      var chatEl = document.getElementById("assistantChat");
+      var replyAudio = document.getElementById("assistantAudio");
+      var auraAvatar = document.getElementById("auraAvatar");
+
+      // replyAudio carries both the greeting and every answer's speech, so
+      // watching its own play/pause state (rather than hooking every call
+      // site) covers "AURA is actually speaking right now" in one place.
+      if (auraAvatar && replyAudio) {
+        replyAudio.addEventListener("play", function () { auraAvatar.classList.add("speaking"); });
+        replyAudio.addEventListener("pause", function () { auraAvatar.classList.remove("speaking"); });
+        replyAudio.addEventListener("ended", function () { auraAvatar.classList.remove("speaking"); });
+      }
+      var mediaRecorder = null;
+      var audioChunks = [];
+      var recordingStartedAt = 0;
+      var idleStatusText = statusEl ? statusEl.textContent : "";
+
+      // Live volume monitoring does two jobs: (1) catches the classic
+      // "recorded but the mic was muted / wrong input device / no signal"
+      // case client-side, so we can say that directly instead of round-
+      // tripping a silent clip to the server and having Whisper hallucinate
+      // a word ("you" is the most common one) that then gets answered as
+      // if it were a real question; and (2) auto-stops the recording once
+      // the EA has clearly stopped talking, so tapping the mic again isn't
+      // mandatory — it's still there for stopping early on purpose.
+      var audioCtx = null;
+      var analyser = null;
+      var levelTimer = null;
+      var monitoringActive = false;
+      var heardSpeech = false;
+      var silenceMs = 0;
+      var elapsedMs = 0;
+      var autoStopFired = false;
+      var SPEECH_THRESHOLD = 8;     // 0-128 scale; typical room noise stays well under this
+      var SILENCE_HOLD_MS = 1200;   // pause this long after talking = "I'm done"
+      var MAX_RECORDING_MS = 20000; // hard cap so it can never listen forever
+      var POLL_MS = 100;
+
+      function startLevelMonitor(stream, onAutoStop) {
+        heardSpeech = false;
+        silenceMs = 0;
+        elapsedMs = 0;
+        autoStopFired = false;
+        monitoringActive = false;
+        try {
+          var Ctx = window.AudioContext || window.webkitAudioContext;
+          if (!Ctx) return;
+          audioCtx = new Ctx();
+          monitoringActive = true;
+          var source = audioCtx.createMediaStreamSource(stream);
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 2048;
+          source.connect(analyser);
+          var data = new Uint8Array(analyser.fftSize);
+          levelTimer = setInterval(function () {
+            analyser.getByteTimeDomainData(data);
+            var maxDeviation = 0;
+            for (var i = 0; i < data.length; i++) {
+              var deviation = Math.abs(data[i] - 128);
+              if (deviation > maxDeviation) maxDeviation = deviation;
+            }
+            elapsedMs += POLL_MS;
+            if (maxDeviation >= SPEECH_THRESHOLD) {
+              heardSpeech = true;
+              silenceMs = 0;
+            } else if (heardSpeech) {
+              silenceMs += POLL_MS;
+            }
+            if (!autoStopFired && ((heardSpeech && silenceMs >= SILENCE_HOLD_MS) || elapsedMs >= MAX_RECORDING_MS)) {
+              autoStopFired = true;
+              if (onAutoStop) onAutoStop();
+            }
+          }, POLL_MS);
+        } catch (e) {
+          audioCtx = null; // monitoring is a best-effort safeguard, not required
+        }
+      }
+
+      function stopLevelMonitor() {
+        if (levelTimer) { clearInterval(levelTimer); levelTimer = null; }
+        if (audioCtx) { audioCtx.close(); audioCtx = null; }
+        analyser = null;
+      }
+
+      function appendMessage(role, text) {
+        var div = document.createElement("div");
+        div.className = "assistant-msg " + role;
+        div.textContent = text;
+        chatEl.appendChild(div);
+        chatEl.scrollTop = chatEl.scrollHeight;
+        return div;
+      }
+
+      // A "typing..." bubble to sit in for the answer while the LLM step
+      // runs, so the EA has something alive to watch instead of a static
+      // status line — the same trick chat apps use to make a wait feel
+      // shorter than it is.
+      function appendTyping() {
+        var div = document.createElement("div");
+        div.className = "assistant-msg assistant assistant-typing";
+        div.innerHTML = "<span></span><span></span><span></span>";
+        chatEl.appendChild(div);
+        chatEl.scrollTop = chatEl.scrollHeight;
+        return div;
+      }
+
+      function playAudioBase64(base64Audio) {
+        replyAudio.src = "data:audio/mp3;base64," + base64Audio;
+        replyAudio.play();
+      }
+
+      // One-time greeting: fetched in the background as soon as the page
+      // loads so it's already in memory (no wait) by the time someone
+      // actually taps the mic. Cached server-side too, so this is cheap.
+      var hasGreeted = false;
+      {% if ai_configured %}
+      var greetingPromise = fetch("{{ url_for('ai_tools.assistant_greeting') }}")
+        .then(function (r) { return r.json(); })
+        .catch(function () { return null; });
+      {% else %}
+      var greetingPromise = Promise.resolve(null);
+      {% endif %}
+
+      function handleRecordingStop() {
+        var recordedMs = Date.now() - recordingStartedAt;
+        var wasSilent = monitoringActive && !heardSpeech;
+        stopLevelMonitor();
+
+        if (recordedMs < 500) {
+          statusEl.textContent = idleStatusText;
+          appendMessage("assistant", "That was too quick — tap the mic, wait a moment, then speak before tapping again.");
+          return;
+        }
+        if (wasSilent) {
+          statusEl.textContent = idleStatusText;
+          appendMessage("assistant", "I didn't hear anything — check that your microphone is unmuted and set as the default input, then try again.");
+          return;
+        }
+
+        statusEl.textContent = "Transcribing...";
+        var blob = new Blob(audioChunks, { type: "audio/webm" });
+        var formData = new FormData();
+        formData.append("audio", blob, "question.webm");
+
+        fetch("{{ url_for('ai_tools.assistant_transcribe') }}", {
+          method: "POST",
+          headers: { "X-CSRFToken": "{{ csrf_token() }}" },
+          body: formData,
+        })
+          .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              appendMessage("assistant", result.data.error || "Something went wrong — please try again.");
+              statusEl.textContent = idleStatusText;
+              return;
+            }
+            // Show the question the moment it's transcribed — no need to
+            // wait for the slower "thinking" step too before anything
+            // appears. A typing bubble takes its place as a live sign the
+            // answer is on its way.
+            appendMessage("user", result.data.question);
+            var typingEl = appendTyping();
+            statusEl.textContent = "Thinking...";
+
+            return fetch("{{ url_for('ai_tools.assistant_answer') }}", {
+              method: "POST",
+              headers: { "X-CSRFToken": "{{ csrf_token() }}", "Content-Type": "application/json" },
+              body: JSON.stringify({ question: result.data.question }),
+            })
+              .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+              .then(function (answerResult) {
+                typingEl.remove();
+                if (!answerResult.ok) {
+                  appendMessage("assistant", answerResult.data.error || "Something went wrong — please try again.");
+                  statusEl.textContent = idleStatusText;
+                  return;
+                }
+                appendMessage("assistant", answerResult.data.answer);
+                statusEl.textContent = "Preparing voice reply...";
+
+                return fetch("{{ url_for('ai_tools.assistant_speak') }}", {
+                  method: "POST",
+                  headers: { "X-CSRFToken": "{{ csrf_token() }}", "Content-Type": "application/json" },
+                  body: JSON.stringify({ text: answerResult.data.answer }),
+                })
+                  .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+                  .then(function (speakResult) {
+                    if (speakResult.ok && speakResult.data.audio_base64) {
+                      playAudioBase64(speakResult.data.audio_base64);
+                    }
+                    // A failed/slow speak step isn't fatal — the text
+                    // answer is already visible, so just go quiet.
+                  })
+                  .catch(function () {});
+              });
+          })
+          .catch(function () {
+            appendMessage("assistant", "Sorry, I couldn't reach the server. Please try again.");
+          })
+          .finally(function () {
+            statusEl.textContent = idleStatusText;
+          });
+      }
+
+      function stopRecording() {
+        // Just stop the recorder here — do NOT stop the underlying mic
+        // tracks yet. MediaRecorder.stop() is async and needs the stream
+        // alive to flush its final chunk; killing the tracks synchronously
+        // right after calling stop() raced that flush and produced an
+        // empty/near-silent blob, which is exactly what made Whisper
+        // hallucinate "you" on every recording. The tracks are stopped
+        // inside onstop instead, once the recorder has actually finished.
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+          micBtn.classList.remove("recording");
+        }
+      }
+
+      function beginListening() {
+        navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        })
+          .then(function (stream) {
+            audioChunks = [];
+            // A higher bitrate than the browser's low default keeps
+            // consonants/word endings distinct instead of smoothing them
+            // into noise — the default is tuned for small file size, not
+            // for feeding a speech-to-text model.
+            mediaRecorder = new MediaRecorder(stream, { audioBitsPerSecond: 128000 });
+            mediaRecorder.ondataavailable = function (e) { audioChunks.push(e.data); };
+            mediaRecorder.onstop = function () {
+              stream.getTracks().forEach(function (t) { t.stop(); });
+              handleRecordingStop();
+            };
+            recordingStartedAt = Date.now();
+            // Auto-stops once a pause follows speech, so tapping again
+            // isn't mandatory — tapping the mic still stops it early too.
+            startLevelMonitor(stream, stopRecording);
+            mediaRecorder.start();
+            micBtn.classList.add("recording");
+            statusEl.textContent = "Listening... pause when you're done, or tap to stop";
+          })
+          .catch(function () {
+            statusEl.textContent = "Microphone access is needed to use the voice assistant.";
+          });
+      }
+
+      if (micBtn) {
+        micBtn.addEventListener("click", function () {
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+            stopRecording();
+            return;
+          }
+
+          if (!hasGreeted) {
+            hasGreeted = true;
+            statusEl.textContent = "...";
+            greetingPromise.then(function (greeting) {
+              var greetingText = (greeting && greeting.text) || "Hi, I am AURA. How can I help you?";
+              appendMessage("assistant", greetingText);
+
+              var proceeded = false;
+              function proceedToListening() {
+                if (proceeded) return;
+                proceeded = true;
+                replyAudio.pause();
+                // The "ended" event fires the instant playback logically
+                // finishes, but the speaker can still be finishing that
+                // last syllable physically for a moment after — starting
+                // the mic right then picked up AURA's own greeting as if
+                // it were the EA's question. A short pause here lets that
+                // fully die out before we start listening.
+                setTimeout(beginListening, 600);
+              }
+
+              if (greeting && greeting.audio_base64) {
+                replyAudio.onended = proceedToListening;
+                replyAudio.onerror = proceedToListening;
+                playAudioBase64(greeting.audio_base64);
+                setTimeout(proceedToListening, 8000); // safety net if playback never fires ended
+              } else {
+                proceedToListening();
+              }
+            });
+            return;
+          }
+
+          beginListening();
+        });
+      }
+    });
+  </script>
+{% endblock %}

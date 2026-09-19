@@ -1,0 +1,45 @@
+{#
+  Reusable "Tags" row embedded on a meeting/project/task page.
+  Required context: entity_type ("MEETING"/"PROJECT"/"TASK"), entity_id,
+  tag_assignments (list[TagAssignment], each with .tag), all_tag_names
+  (list[str], for the add-tag autocomplete), is_ea.
+
+  Not the same feature as the "Tag Meeting"/"Tag to Project" buttons
+  elsewhere — see app/models/tag.py for why the two share a name.
+#}
+<div class="tag-row d-flex align-items-center flex-wrap gap-2">
+  <i class="bi bi-tags text-muted" style="font-size:.85rem;"></i>
+
+  {% for assignment in tag_assignments %}
+    <span class="tag-chip tag-{{ assignment.tag.color }}">
+      <a href="{{ url_for('tags.view', tag_id=assignment.tag.id) }}" class="tag-chip-label">{{ assignment.tag.name }}</a>
+      {% if is_ea %}
+        <form method="POST" action="{{ url_for('tags.unassign', assignment_id=assignment.id) }}" class="d-inline lh-1"
+              onsubmit="return confirm('Remove tag &quot;{{ assignment.tag.name }}&quot;?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="tag-chip-remove" title="Remove tag"><i class="bi bi-x"></i></button>
+        </form>
+      {% endif %}
+    </span>
+  {% else %}
+    {% if not is_ea %}<span class="text-muted" style="font-size:.76rem;">No tags yet.</span>{% endif %}
+  {% endfor %}
+
+  {% if is_ea %}
+    <form method="POST" action="{{ url_for('tags.assign') }}" class="d-flex align-items-center gap-1">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="entity_type" value="{{ entity_type }}">
+      <input type="hidden" name="entity_id" value="{{ entity_id }}">
+      <input type="text" name="tag_name" autocomplete="off"
+             list="tag-suggestions-{{ entity_type }}-{{ entity_id }}"
+             class="form-control form-control-sm" style="width:150px; border-radius:999px;"
+             placeholder="+ Add tag">
+      <datalist id="tag-suggestions-{{ entity_type }}-{{ entity_id }}">
+        {% for name in all_tag_names %}<option value="{{ name }}">{% endfor %}
+      </datalist>
+      <button type="submit" class="btn btn-sm btn-outline-primary" style="border-radius:999px; padding:.15rem .6rem;" title="Add tag">
+        <i class="bi bi-plus-lg"></i>
+      </button>
+    </form>
+  {% endif %}
+</div>

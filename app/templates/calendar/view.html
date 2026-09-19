@@ -1,0 +1,113 @@
+{% extends "layouts/base.html" %}
+{% block title %}Calendar — {{ product_name }}{% endblock %}
+
+{% block content %}
+  <div class="cal-hero d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+    <div>
+      <h4 class="fw-bold mb-1">Make room for what matters.</h4>
+      <div class="text-muted" style="font-size:.85rem;">Your meetings, synced from Google Calendar, in one place.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('calendar.status') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-gear me-1"></i>Connection Settings</a>
+      <a href="{{ url_for('meetings.list_view') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Meeting</a>
+    </div>
+  </div>
+
+  <div class="cal-layout">
+    <div class="md-card">
+      <div class="md-card-body">
+        <div class="cal-toolbar">
+          <div class="cal-toolbar-left">
+            <button type="button" class="cal-today-btn" id="calToday">Today</button>
+            <button type="button" class="cal-nav-btn" id="calPrev" aria-label="Previous"><i class="bi bi-chevron-left"></i></button>
+            <button type="button" class="cal-nav-btn" id="calNext" aria-label="Next"><i class="bi bi-chevron-right"></i></button>
+            <span class="cal-toolbar-title" id="calTitle"></span>
+          </div>
+          <div class="cal-view-tabs" id="calViewTabs">
+            <button type="button" class="cal-view-tab active" data-view="dayGridMonth">Month</button>
+            <button type="button" class="cal-view-tab" data-view="timeGridWeek">Week</button>
+            <button type="button" class="cal-view-tab" data-view="timeGridDay">Day</button>
+            <button type="button" class="cal-view-tab" data-view="listWeek">Agenda</button>
+          </div>
+        </div>
+        <div id="calendar"></div>
+      </div>
+    </div>
+
+    <div class="md-card">
+      <div class="md-card-body">
+        <div class="cal-agenda-date" id="agendaDate"></div>
+        <div class="cal-agenda-label">Today's agenda</div>
+        <div id="agendaList"></div>
+
+        <div class="cal-cta">
+          <p>Have something to discuss? Schedule a meeting and bring people together.</p>
+          <a href="{{ url_for('meetings.list_view') }}" class="btn btn-sm w-100"><i class="bi bi-calendar-plus me-1"></i>Schedule a meeting</a>
+        </div>
+
+        <div class="cal-agenda-label mb-2">Event categories</div>
+        <div class="cal-legend">
+          <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:var(--md-primary);"></span>Scheduled</span>
+          <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:var(--md-warning);"></span>In Progress</span>
+          <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:var(--md-success);"></span>Completed</span>
+          <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:var(--md-danger);"></span>On Hold</span>
+          <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:#98A2B3;"></span>Cancelled</span>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const calendarEl = document.getElementById("calendar");
+      const titleEl = document.getElementById("calTitle");
+      const agendaListEl = document.getElementById("agendaList");
+      const viewTabs = document.querySelectorAll("#calViewTabs .cal-view-tab");
+
+      const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: "dayGridMonth",
+        headerToolbar: false,
+        height: "auto",
+        // Timed events default to a small dot + text ("list-item" display)
+        // in month view — force the same solid pill block used everywhere
+        // else here, all-day or not.
+        eventDisplay: "block",
+        events: "{{ url_for('calendar.events_json') }}",
+        eventClick: function (info) {
+          info.jsEvent.preventDefault();
+          if (info.event.url) window.location = info.event.url;
+        },
+        datesSet: function (info) { titleEl.textContent = info.view.title; },
+        eventsSet: function () {
+          renderCalendarAgenda(agendaListEl, eventsOverlappingToday(calendar), {
+            getMeta: function (event) {
+              const status = event.extendedProps.status;
+              const location = event.extendedProps.location;
+              return location ? status + " · " + location : status;
+            },
+            onClick: function (event) { if (event.url) window.location = event.url; },
+          });
+        },
+      });
+      calendar.render();
+
+      document.getElementById("agendaDate").textContent =
+        new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+
+      document.getElementById("calToday").addEventListener("click", function () { calendar.today(); });
+      document.getElementById("calPrev").addEventListener("click", function () { calendar.prev(); });
+      document.getElementById("calNext").addEventListener("click", function () { calendar.next(); });
+
+      viewTabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          calendar.changeView(tab.dataset.view);
+          viewTabs.forEach(function (t) { t.classList.remove("active"); });
+          tab.classList.add("active");
+        });
+      });
+    });
+  </script>
+{% endblock %}

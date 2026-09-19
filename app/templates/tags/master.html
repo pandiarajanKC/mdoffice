@@ -1,0 +1,84 @@
+{% extends "layouts/base.html" %}
+{% block title %}Tag Master — {{ product_name }}{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">Tag Master</h4>
+      <div class="text-muted" style="font-size:.85rem;">
+        Labels {{ 'you' if is_ea else 'the EA' }} can attach to meetings, projects, tasks and action items — {{ tags|length }} tag{{ '' if tags|length == 1 else 's' }} defined.
+      </div>
+    </div>
+  </div>
+
+  {% if is_ea %}
+    <div class="md-card mb-3">
+      <div class="md-card-header"><h6><i class="bi bi-tag me-2 text-primary"></i>Create a Tag</h6></div>
+      <div class="md-card-body">
+        <form method="POST" action="{{ url_for('tags.create') }}" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">{{ form.name.label.text }}</label>
+            {{ form.name(class="form-control form-control-sm") }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">{{ form.color.label.text }}</label>
+            {{ form.color(class="form-select form-select-sm") }}
+          </div>
+          <div class="col-md-2">
+            <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>Create</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if tags %}
+    <div class="md-card">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:.85rem;">
+          <thead>
+            <tr class="text-muted" style="font-size:.72rem; text-transform:uppercase;">
+              <th>Tag</th>
+              <th>Items tagged</th>
+              <th>Created by</th>
+              <th>Created</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for tag in tags %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('tags.view', tag_id=tag.id) }}" class="tag-chip tag-{{ tag.color }} text-decoration-none">
+                    {{ tag.name }}
+                  </a>
+                </td>
+                <td>{{ counts.get(tag.id, 0) }}</td>
+                <td class="text-muted">{{ tag.created_by }}</td>
+                <td class="text-muted">{{ tag.created_at.strftime('%d %b %Y') }}</td>
+                <td class="text-end">
+                  <a href="{{ url_for('tags.view', tag_id=tag.id) }}" class="btn btn-sm btn-outline-secondary">View</a>
+                  {% if is_ea %}
+                    <form method="POST" action="{{ url_for('tags.delete', tag_id=tag.id) }}" class="d-inline"
+                          onsubmit="return confirm('Delete tag &quot;{{ tag.name }}&quot;? It will be removed from every item carrying it.');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="md-card">
+      <div class="md-card-body text-center text-muted py-5">
+        <i class="bi bi-tags" style="font-size:2rem;"></i>
+        <p class="mt-2 mb-0">No tags yet.{% if is_ea %} Create one above, or add one straight from a meeting, project or task page.{% endif %}</p>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

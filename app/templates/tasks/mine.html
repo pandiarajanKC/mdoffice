@@ -1,0 +1,58 @@
+{% extends "layouts/base.html" %}
+{% block title %}My Tasks — {{ product_name }}{% endblock %}
+
+{% block content %}
+  <div class="mb-3">
+    <h4 class="fw-bold mb-1">My Tasks</h4>
+    <div class="text-muted" style="font-size:.85rem;">Action items and project tasks assigned to you.</div>
+  </div>
+
+  <ul class="nav nav-pills mb-3" style="font-size:.85rem;">
+    {% for key, label in [('','All'), ('OPEN','Open'), ('IN_PROGRESS','In Progress'), ('ON_HOLD','On Hold'), ('COMPLETED','Completed')] %}
+      <li class="nav-item">
+        <a class="nav-link {{ 'active' if status_filter == key else '' }}" href="{{ url_for('tasks.mine', status=key) }}">{{ label }}</a>
+      </li>
+    {% endfor %}
+  </ul>
+
+  {% if tasks %}
+    <div class="d-flex flex-column gap-2">
+      {% for task in tasks %}
+        <a href="{{ url_for('tasks.detail', task_id=task.id) }}" class="text-decoration-none text-dark">
+          <div class="md-card">
+            <div class="md-card-body">
+              <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                <div>
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="fw-semibold" style="font-size:.9rem;">{{ task.title }}</span>
+                    <span class="status-badge status-{{ badge_class(task.priority.value, PRIORITY_BADGE) }}">{{ task.priority.value }}</span>
+                    <span class="status-badge status-{{ badge_class(task.status.value, TASK_STATUS_BADGE) }}">{{ task.status.value.replace('_',' ') }}</span>
+                    {% if task.is_overdue %}<span class="status-badge status-overdue">OVERDUE</span>{% endif %}
+                  </div>
+                  <div class="text-muted" style="font-size:.78rem;">
+                    {{ task_source_label(task) }}
+                    {% if task.due_date %} &middot; <i class="bi bi-calendar-event me-1"></i>Due {{ task.due_date.strftime('%d %b %Y') }}{% endif %}
+                  </div>
+                </div>
+                <div class="text-end" style="min-width:80px;">
+                  <div class="progress" style="height:6px; width:80px;">
+                    <div class="progress-bar" role="progressbar" style="width: {{ task.progress_percent }}%;"></div>
+                  </div>
+                  <div class="text-muted" style="font-size:.72rem;">{{ task.progress_percent }}%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="md-card">
+      <div class="empty-state">
+        <i class="bi bi-check2-square"></i>
+        <div class="fw-semibold mb-1">Nothing here</div>
+        <div style="font-size:.83rem;">You have no tasks in this view.</div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

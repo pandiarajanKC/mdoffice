@@ -1,0 +1,53 @@
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="md-card info-list-card h-100">
+      <div class="info-list-head">
+        <div class="info-list-title">Today's Tasks &amp; Overdue Tasks <span class="info-list-count text-danger">({{ overdue.total }})</span></div>
+      </div>
+      <div class="info-list-body">
+        {% if overdue.rows %}
+          {% for item in overdue.rows %}
+            <a href="{{ url_for('tasks.detail', task_id=item.task.id) }}" class="info-list-row text-decoration-none text-reset">
+              <div>
+                <div class="row-title">{{ item.task.title }}</div>
+                <div class="row-sub">{{ item.source_label }} &middot; {{ item.assignees }}</div>
+              </div>
+              {% if item.is_overdue %}
+                <div class="row-badge text-danger">{{ item.days_overdue }}d overdue</div>
+              {% else %}
+                <div class="row-badge text-warning">Due Today</div>
+              {% endif %}
+            </a>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state py-3"><i class="bi bi-check-circle"></i><div>Nothing due today, and no overdue tasks. Nice work.</div></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="md-card info-list-card h-100">
+      <div class="info-list-head">
+        <div class="info-list-title">Today's Meetings <span class="info-list-count text-primary">({{ todays_meetings|length }})</span></div>
+        <div class="info-list-sub">{{ today_str }}</div>
+      </div>
+      <div class="info-list-body">
+        {% if todays_meetings %}
+          {% for m in todays_meetings %}
+            <a href="{{ url_for('meetings.workspace', meeting_id=m.id) }}" class="info-list-row text-decoration-none text-reset">
+              <div>
+                <div class="row-title">{{ m.title }}</div>
+                <div class="row-sub">{{ m.location or 'No location set' }}</div>
+              </div>
+              <div class="row-badge {{ 'text-warning' if m.status.value == 'IN_PROGRESS' else 'text-muted' if m.status.value == 'CANCELLED' else 'text-primary' }}">
+                {{ 'Now' if m.status.value == 'IN_PROGRESS' else 'Cancelled' if m.status.value == 'CANCELLED' else m.start_datetime.strftime('%I:%M %p') }}
+              </div>
+            </a>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state py-3"><i class="bi bi-calendar-check"></i><div>No meetings scheduled for today.</div></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>

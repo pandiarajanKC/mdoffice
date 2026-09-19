@@ -1,0 +1,24 @@
+<div class="md-card">
+  <div class="md-card-header">
+    <h6><i class="bi bi-signpost-2 me-2 text-primary"></i>What's coming online next</h6>
+  </div>
+  <div class="md-card-body pt-2 pb-1">
+    {% if roadmap %}
+      {% for item in roadmap %}
+        <div class="roadmap-item">
+          <span class="roadmap-badge">{{ item.phase }}</span>
+          <div>
+            <div class="name">{{ item.name }}</div>
+            <div class="detail">{{ item.detail }}</div>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state py-3">
+        <i class="bi bi-check2-circle"></i>
+        <div class="fw-semibold mb-1">Every planned module is live</div>
+        <div style="font-size:.83rem;">Meetings, Projects, the Employee Portal, Dashboards, Calendar Sync, AI Tools, Notifications, and Reports are all built.</div>
+      </div>
+    {% endif %}
+  </div>
+</div>

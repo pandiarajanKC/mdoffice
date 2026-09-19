@@ -1,0 +1,231 @@
+{# Corporate Calendar Event Submission Form — Sections 2-5, matching the
+   company's paper/PDF form field-for-field (see app/models/corporate_event.py).
+   Rendered two ways with no duplication: as the body of the full-page
+   event_form.html, and injected as-is into the modal on mine.html (see
+   app/static/js/app.js's wireCorporateEventForm, which both callers use
+   to wire this same markup up). #}
+{% if service_error %}
+  <div class="alert alert-danger py-2 px-3 mb-3">{{ service_error }}</div>
+{% endif %}
+
+<form method="POST" data-corporate-event-form
+      action="{{ url_for('corporate_calendar.edit', event_id=event.id) if event else url_for('corporate_calendar.create') }}">
+  {{ form.hidden_tag() }}
+
+  <div class="md-card mb-3">
+    <div class="md-card-body">
+      <div class="form-section-title">Section 2 — Event Details</div>
+      <div class="form-section-sub">What the event is, when, and where.</div>
+
+      <div class="mb-2">
+        {{ form.title.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+        {{ form.title(class="form-control form-control-sm") }}
+        {% for e in form.title.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+      </div>
+
+      <div class="row g-2 mb-2 align-items-end">
+        <div class="col-md-6">
+          {{ form.event_type.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+          {{ form.event_type(class="form-select form-select-sm", id="event_type") }}
+        </div>
+        <div class="col-md-6 d-none" id="event_type_other_row">
+          {{ form.event_type_other.label(class="form-label small fw-semibold") }}
+          {{ form.event_type_other(class="form-control form-control-sm") }}
+        </div>
+      </div>
+
+      <div class="row g-2 mb-2">
+        <div class="col-md-3">
+          {{ form.start_date.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+          {{ form.start_date(class="form-control form-control-sm") }}
+          {% for e in form.start_date.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="col-md-3">
+          {{ form.end_date.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+          {{ form.end_date(class="form-control form-control-sm") }}
+          {% for e in form.end_date.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="col-md-3">
+          {{ form.location.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+          {{ form.location(class="form-control form-control-sm") }}
+        </div>
+        <div class="col-md-3">
+          {{ form.organizer.label(class="form-label small fw-semibold") }}
+          {{ form.organizer(class="form-control form-control-sm") }}
+        </div>
+      </div>
+
+      <div class="mb-1">
+        {{ form.description.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+        {{ form.description(class="form-control form-control-sm", rows=3) }}
+        {% for e in form.description.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="md-card mb-3">
+    <div class="md-card-body">
+      <div class="form-section-title">Section 3 — Priority &amp; Impact Assessment</div>
+      <div class="form-section-sub">Determines whether this event is eligible for the MD's calendar (see the note below).</div>
+
+      <div class="mb-3">
+        {{ form.priority_level.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+        <div class="radio-stack">
+          {% for sub in form.priority_level %}
+            <div class="form-check">
+              {{ sub(class="form-check-input") }}
+              {{ sub.label(class="form-check-label small") }}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="row g-3 mb-2">
+        <div class="col-md-4">
+          {{ form.md_presence_required.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+          <div class="radio-inline-group">
+            {% for sub in form.md_presence_required %}
+              <div class="form-check form-check-inline">
+                {{ sub(class="form-check-input") }}
+                {{ sub.label(class="form-check-label small") }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-4">
+          {{ form.involves_external_stakeholder.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+          <div class="radio-inline-group">
+            {% for sub in form.involves_external_stakeholder %}
+              <div class="form-check form-check-inline">
+                {{ sub(class="form-check-input") }}
+                {{ sub.label(class="form-check-label small") }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-4">
+          {{ form.has_critical_impact.label(class="form-label small fw-semibold") }} <span class="text-danger">*</span>
+          <div class="radio-inline-group">
+            {% for sub in form.has_critical_impact %}
+              <div class="form-check form-check-inline">
+                {{ sub(class="form-check-input") }}
+                {{ sub.label(class="form-check-label small") }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-info py-2 px-3 mb-3" style="font-size:.78rem;">
+        <strong>Quick reference — MD Calendar eligibility.</strong> This event is treated as MD-eligible if the answer to
+        any one of the three questions above is Yes (or "Awareness only"). If the answer to all three is No, it still
+        appears on your own calendar, but EA/MD will see it flagged as standard priority rather than something the MD
+        needs to act on.
+      </div>
+
+      <div class="row g-2">
+        <div class="col-md-8">
+          {{ form.key_participants.label(class="form-label small fw-semibold") }}
+          {{ form.key_participants(class="form-control form-control-sm", rows=2) }}
+        </div>
+        <div class="col-md-4">
+          {{ form.estimated_attendees.label(class="form-label small fw-semibold") }}
+          {{ form.estimated_attendees(class="form-control form-control-sm") }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="md-card mb-3">
+    <div class="md-card-body">
+      <div class="form-section-title">Section 4 — Preparation &amp; Action Required</div>
+      <div class="form-section-sub">Optional — fill in whatever is already known.</div>
+
+      <div class="row g-2 mb-2">
+        <div class="col-md-6">
+          {{ form.pre_event_actions.label(class="form-label small fw-semibold") }}
+          {{ form.pre_event_actions(class="form-control form-control-sm", rows=2) }}
+        </div>
+        <div class="col-md-6">
+          {{ form.documents_to_prepare.label(class="form-label small fw-semibold") }}
+          {{ form.documents_to_prepare(class="form-control form-control-sm", rows=2) }}
+        </div>
+      </div>
+
+      <div class="row g-2 mb-2 align-items-end">
+        <div class="col-md-3">
+          {{ form.budget_involved.label(class="form-label small fw-semibold") }}
+          <div class="radio-inline-group">
+            {% for sub in form.budget_involved %}
+              <div class="form-check form-check-inline">
+                {{ sub(class="form-check-input") }}
+                {{ sub.label(class="form-check-label small") }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-3 d-none" id="budget_amount_row">
+          {{ form.budget_amount.label(class="form-label small fw-semibold") }}
+          {{ form.budget_amount(class="form-control form-control-sm") }}
+        </div>
+        <div class="col-md-3">
+          {{ form.preparation_deadline.label(class="form-label small fw-semibold") }}
+          {{ form.preparation_deadline(class="form-control form-control-sm") }}
+        </div>
+      </div>
+
+      <div class="row g-2">
+        <div class="col-md-4">
+          {{ form.conflicts_with_events.label(class="form-label small fw-semibold") }}
+          <div class="radio-inline-group">
+            {% for sub in form.conflicts_with_events %}
+              <div class="form-check form-check-inline">
+                {{ sub(class="form-check-input") }}
+                {{ sub.label(class="form-check-label small") }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-8 d-none" id="conflict_notes_row">
+          {{ form.conflict_notes.label(class="form-label small fw-semibold") }}
+          {{ form.conflict_notes(class="form-control form-control-sm", rows=1) }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="md-card mb-3">
+    <div class="md-card-body">
+      <div class="form-section-title">Section 5 — Attachments</div>
+      <div class="form-section-sub">Tick whatever you have on hand (the files themselves can be shared separately).</div>
+
+      <div class="checkbox-grid mb-2">
+        {% for sub in form.attachment_types %}
+          <div class="form-check">
+            {{ sub(class="form-check-input") }}
+            {{ sub.label(class="form-check-label small") }}
+          </div>
+        {% endfor %}
+      </div>
+
+      <div>
+        {{ form.attachment_notes.label(class="form-label small fw-semibold") }}
+        {{ form.attachment_notes(class="form-control form-control-sm", rows=2) }}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-between">
+    <div>
+      {% if event %}
+        <button type="button" class="btn btn-outline-danger btn-sm" id="deleteEventBtn" data-delete-url="{{ url_for('corporate_calendar.delete', event_id=event.id) }}">
+          <i class="bi bi-trash me-1"></i>Delete Event
+        </button>
+      {% endif %}
+    </div>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-light btn-sm" id="cancelEventBtn">Cancel</button>
+      <button type="submit" class="btn btn-primary btn-sm">{{ "Save Changes" if event else "Add Event" }}</button>
+    </div>
+  </div>
+</form>

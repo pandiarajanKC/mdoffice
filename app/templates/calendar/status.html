@@ -1,0 +1,140 @@
+{% extends "layouts/base.html" %}
+{% block title %}Calendar — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <style>
+    .fc { font-size: .82rem; }
+    .fc .fc-toolbar-title { font-size: 1.05rem; font-weight: 700; }
+    .fc-event { cursor: pointer; border: none; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">EA's Calendar</h4>
+      <div class="text-muted" style="font-size:.85rem;">Connect the EA's Google Calendar so meetings sync automatically.</div>
+    </div>
+    {% if current_user.role.value == 'EA' %}
+      <a href="{{ url_for('calendar.email_search') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-envelope me-1"></i>Email</a>
+    {% endif %}
+  </div>
+
+  {% if not md_accounts %}
+    <div class="md-card"><div class="empty-state py-4"><i class="bi bi-person-x"></i><div>No MD account exists yet.</div></div></div>
+  {% endif %}
+
+  <div class="d-flex flex-column gap-3">
+    {% for md_user in md_accounts %}
+      {% set integration = integrations.get(md_user.username) %}
+      <div class="md-card">
+        <div class="md-card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
+          <div class="d-flex align-items-center gap-3">
+            <div class="user-avatar" style="width:44px;height:44px;">E</div>
+            <div>
+              <div class="fw-semibold">EA's Calendar</div>
+              {% if integration %}
+                <div class="text-muted" style="font-size:.78rem;">
+                  <span class="status-badge status-completed"><i class="bi bi-check-circle"></i> Connected</span>
+                  {% if integration.google_account_email %} &middot; {{ integration.google_account_email }}{% endif %}
+                </div>
+                <div class="text-muted" style="font-size:.75rem;">
+                  Last synced: {{ integration.last_synced_at.strftime('%d %b %Y, %I:%M %p') if integration.last_synced_at else 'Never' }}
+                </div>
+              {% else %}
+                <div class="text-muted" style="font-size:.78rem;"><span class="status-badge status-hold">Not connected</span></div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            {% if integration %}
+              <form method="POST" action="{{ url_for('calendar.sync', username=md_user.username) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-repeat me-1"></i>Sync Now</button>
+              </form>
+              <form method="POST" action="{{ url_for('calendar.disconnect', username=md_user.username) }}" onsubmit="return confirm('Disconnect Google Calendar for {{ md_user.display_name or md_user.username }}? Previously synced meetings are kept.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+              </form>
+            {% else %}
+              <a href="{{ url_for('calendar.connect', md_username=md_user.username) }}" class="btn btn-sm btn-primary">
+                <i class="bi bi-google me-1"></i>Sign in with Google
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="text-muted mt-3 mb-3" style="font-size:.78rem;">
+    Clicking "Sign in with Google" takes you to Google's own sign-in and consent screen —
+    the MD (or whoever manages the calendar) signs in with their Google account there, and
+    only grants read-only access to their calendar. This application never sees or stores
+    the Google password itself.
+  </div>
+
+  <div class="md-card">
+    <div class="md-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <h6 class="mb-0">Calendar</h6>
+      <div class="d-flex align-items-center gap-2">
+        <label for="calendarDateFilter" class="small text-muted mb-0">Jump to date:</label>
+        <input type="date" id="calendarDateFilter" class="form-control form-control-sm" style="width:auto;">
+        <button type="button" id="calendarDateClear" class="btn btn-sm btn-outline-secondary" style="display:none;">Back to Month</button>
+      </div>
+    </div>
+    <div class="md-card-body">
+      <div id="calendar"></div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const calendarEl = document.getElementById("calendar");
+      const dateFilter = document.getElementById("calendarDateFilter");
+      const dateClearBtn = document.getElementById("calendarDateClear");
+
+      const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: "dayGridMonth",
+        headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek" },
+        height: "auto",
+        events: "{{ url_for('calendar.events_json') }}",
+        eventClick: function (info) {
+          info.jsEvent.preventDefault();
+          if (info.event.url) window.location = info.event.url;
+        },
+        // Keep the date field and "Back to Month" button in sync however
+        // the EA/MD gets into day view — the picker below, the toolbar's
+        // own "timeGridDay" button, or clicking a date number in month view.
+        datesSet: function (info) {
+          if (calendar.view.type === "timeGridDay") {
+            dateFilter.value = info.startStr.slice(0, 10);
+            dateClearBtn.style.display = "inline-block";
+          } else {
+            dateClearBtn.style.display = "none";
+          }
+        },
+        dateClick: function (info) {
+          calendar.changeView("timeGridDay", info.dateStr);
+        },
+      });
+      calendar.render();
+
+      if (dateFilter) {
+        dateFilter.addEventListener("change", function () {
+          if (!dateFilter.value) return;
+          calendar.changeView("timeGridDay", dateFilter.value);
+        });
+      }
+      if (dateClearBtn) {
+        dateClearBtn.addEventListener("click", function () {
+          calendar.changeView("dayGridMonth");
+          dateClearBtn.style.display = "none";
+        });
+      }
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,153 @@
+{% extends "layouts/base.html" %}
+{% block title %}{{ task.title }} — {{ product_name }}{% endblock %}
+
+{% block content %}
+  <div class="mb-2">
+    {% if is_employee_viewer %}
+      <a href="{{ url_for('tasks.mine') }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to My Tasks</a>
+    {% elif task.meeting_id %}
+      <a href="{{ url_for('meetings.workspace', meeting_id=task.meeting_id) }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Meeting</a>
+    {% elif task.project_id %}
+      <a href="{{ url_for('projects.detail', project_id=task.project_id) }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Project</a>
+    {% endif %}
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="md-card mb-3">
+        <div class="md-card-body">
+          <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <span class="status-badge status-{{ badge_class(task.priority.value, PRIORITY_BADGE) }}">{{ task.priority.value }}</span>
+            <span class="status-badge status-{{ badge_class(task.status.value, TASK_STATUS_BADGE) }}">{{ task.status.value.replace('_',' ') }}</span>
+            {% if task.is_overdue %}<span class="status-badge status-overdue">OVERDUE</span>{% endif %}
+            {% set entity_type = "TASK" %}
+            {% set entity_id = task.id %}
+            {% include "components/_tag_widget.html" %}
+          </div>
+          <h5 class="fw-bold mb-2">{{ task.title }}</h5>
+          {% if task.description %}
+            <p style="font-size:.87rem; white-space: pre-line;">{{ task.description }}</p>
+          {% endif %}
+          <div class="text-muted" style="font-size:.8rem;">
+            <i class="bi bi-people me-1"></i>{{ assignee_names|join(', ') or 'Unassigned' }}
+            {% if task.due_date %} &middot; <i class="bi bi-calendar-event me-1"></i>Due {{ task.due_date.strftime('%d %b %Y') }}{% endif %}
+            &middot; <i class="bi bi-signpost-2 me-1"></i>{{ source_label }}
+          </div>
+          <div class="progress mt-3" style="height:8px;">
+            <div class="progress-bar" role="progressbar" style="width: {{ task.progress_percent }}%;"></div>
+          </div>
+          <div class="text-muted mt-1" style="font-size:.75rem;">{{ task.progress_percent }}% complete</div>
+        </div>
+      </div>
+
+      {% if can_update %}
+        <div class="md-card mb-3">
+          <div class="md-card-header"><h6>Update This Task</h6></div>
+          <div class="md-card-body">
+            <div class="d-flex gap-2 mb-3">
+              <form method="POST" action="{{ url_for('tasks.update_status', task_id=task.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                  {% for s in ['OPEN','IN_PROGRESS','COMPLETED','ON_HOLD','CANCELLED'] %}
+                    <option value="{{ s }}" {{ 'selected' if task.status.value == s else '' }}>{{ s.replace('_',' ').title() }}</option>
+                  {% endfor %}
+                </select>
+              </form>
+            </div>
+            <form method="POST" action="{{ url_for('tasks.add_comment', task_id=task.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Add a comment or progress note</label>
+                <textarea name="update_text" class="form-control form-control-sm" rows="2" placeholder="e.g. Completed first round of validation. Waiting for Finance confirmation." required></textarea>
+              </div>
+              <div class="d-flex align-items-end gap-2">
+                <div style="width:160px;">
+                  <label class="form-label small fw-semibold">Progress % (optional)</label>
+                  <input type="number" name="progress_percent" min="0" max="100" class="form-control form-control-sm" value="{{ task.progress_percent }}">
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Post Update</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="md-card">
+        <div class="md-card-header"><h6>Progress Updates</h6></div>
+        <div class="md-card-body">
+          {% if task.progress_updates %}
+            <div class="d-flex flex-column gap-2">
+              {% for update in task.progress_updates %}
+                <div class="border-start border-3 border-primary ps-3 py-1" style="font-size:.87rem;">
+                  <div>{{ update.update_text }}{% if update.progress_percent is not none %} <span class="text-muted">({{ update.progress_percent }}%)</span>{% endif %}</div>
+                  <div class="text-muted" style="font-size:.72rem;">{{ update.created_at.strftime('%d %b %Y, %I:%M %p') }} &middot; {{ update.performed_by }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-muted small">No updates yet.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="md-card mb-3">
+        <div class="md-card-header"><h6><i class="bi bi-alarm me-2 text-primary"></i>Reminders</h6></div>
+        <div class="md-card-body">
+          {% if is_ea %}
+            <form method="POST" action="{{ url_for('tasks.add_reminder', task_id=task.id) }}" class="mb-3">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="mb-2">
+                <input type="datetime-local" name="remind_at" class="form-control form-control-sm" required>
+              </div>
+              <div class="mb-2">
+                <input type="text" name="note" class="form-control form-control-sm" placeholder="e.g. Follow up with Finance">
+              </div>
+              <button type="submit" class="btn btn-sm btn-outline-primary w-100">Set Reminder</button>
+            </form>
+          {% endif %}
+          {% if reminders %}
+            <div class="d-flex flex-column gap-2">
+              {% for reminder in reminders %}
+                <div class="d-flex justify-content-between align-items-start border-top pt-2">
+                  <div>
+                    <div style="font-size:.82rem;">{{ reminder.note or 'Reminder' }}</div>
+                    <div class="text-muted" style="font-size:.72rem;">{{ reminder.remind_at.strftime('%d %b %Y, %I:%M %p') }}{% if reminder.notified_at %} &middot; sent{% endif %}</div>
+                  </div>
+                  {% if is_ea %}
+                    <form method="POST" action="{{ url_for('tasks.dismiss_reminder', task_id=task.id, reminder_id=reminder.id) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Dismiss"><i class="bi bi-x-circle"></i></button>
+                    </form>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-muted small">No reminders set.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="md-card">
+        <div class="md-card-header"><h6>Activity</h6></div>
+        <div class="md-card-body">
+          {% if activity_entries %}
+            {% for entry in activity_entries %}
+              <div class="roadmap-item">
+                <span class="roadmap-badge">{{ entry.performed_at.strftime('%d %b, %I:%M %p') }}</span>
+                <div>
+                  <div class="name">{{ entry.action_type.replace('_',' ').title() }}</div>
+                  <div class="detail">by {{ entry.performed_by }}{% if entry.new_value %} — {{ entry.new_value }}{% endif %}</div>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted small">No activity recorded yet.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

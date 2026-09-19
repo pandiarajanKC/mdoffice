@@ -1,0 +1,64 @@
+<header class="app-topbar">
+  <div class="topbar-left">
+    <button class="sidebar-toggle" type="button" aria-label="Toggle sidebar">
+      <i class="bi bi-list"></i>
+    </button>
+    <div class="topbar-search" title="Global search — available in a later phase">
+      <i class="bi bi-search"></i>
+      <input type="text" placeholder="Search meetings, projects, actions..." disabled>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <div class="dropdown">
+      <button class="icon-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+        <i class="bi bi-bell"></i>
+        {% if notification_unread_count %}<span class="dot"></span>{% endif %}
+      </button>
+      <div class="dropdown-menu dropdown-menu-end p-0" style="width:340px;">
+        <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
+          <span class="fw-semibold" style="font-size:.85rem;">Notifications</span>
+          {% if notification_unread_count %}
+            <form method="POST" action="{{ url_for('notifications.mark_all_read') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-link p-0" style="font-size:.72rem;">Mark all read</button>
+            </form>
+          {% endif %}
+        </div>
+        {% if recent_notifications %}
+          {% for item in recent_notifications %}
+            <form method="POST" action="{{ url_for('notifications.mark_read', notification_id=item.notification.id) }}" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="dropdown-item d-flex gap-2 py-2 px-3 border-bottom {{ 'bg-light' if not item.notification.is_read else '' }}" style="white-space:normal; font-size:.8rem;">
+                <i class="bi {{ 'bi-circle-fill text-primary' if not item.notification.is_read else 'bi-circle text-muted' }}" style="font-size:.4rem; margin-top:.4rem;"></i>
+                <span class="text-start">
+                  <span class="d-block">{{ item.notification.title }}</span>
+                  <span class="text-muted" style="font-size:.7rem;">{{ item.notification.created_at.strftime('%d %b, %I:%M %p') }}</span>
+                </span>
+              </button>
+            </form>
+          {% endfor %}
+        {% else %}
+          <div class="text-muted text-center py-4" style="font-size:.8rem;">No notifications yet.</div>
+        {% endif %}
+        <a href="{{ url_for('notifications.list_view') }}" class="dropdown-item text-center py-2" style="font-size:.78rem;">View all</a>
+      </div>
+    </div>
+
+    <div class="dropdown">
+      <div class="user-chip" data-bs-toggle="dropdown" aria-expanded="false" role="button">
+        <div class="user-avatar">{{ current_user_display_name[:1]|upper }}</div>
+        <div>
+          <div class="u-name">{{ current_user_display_name }}</div>
+          <div class="u-role">{{ current_user.role.value }}</div>
+        </div>
+        <i class="bi bi-chevron-down small text-muted"></i>
+      </div>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="{{ url_for('auth.change_password') }}"><i class="bi bi-key me-2"></i>Change password</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right me-2"></i>Sign out</a></li>
+      </ul>
+    </div>
+  </div>
+</header>

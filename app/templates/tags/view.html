@@ -1,0 +1,83 @@
+{% extends "layouts/base.html" %}
+{% block title %}{{ tag.name }} — Tags — {{ product_name }}{% endblock %}
+
+{% block content %}
+  <div class="mb-2">
+    <a href="{{ url_for('tags.master') }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Tag Master</a>
+  </div>
+
+  <div class="md-card mb-3">
+    <div class="md-card-body d-flex align-items-center gap-2">
+      <span class="tag-chip tag-{{ tag.color }}" style="font-size:.95rem; padding:.4rem 1rem;">{{ tag.name }}</span>
+      <span class="text-muted" style="font-size:.83rem;">
+        {{ meetings|length + projects|length + tasks|length }} item{{ '' if (meetings|length + projects|length + tasks|length) == 1 else 's' }} tagged
+      </span>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="md-card h-100">
+        <div class="md-card-header"><h6><i class="bi bi-people me-2 text-primary"></i>Meetings <span class="badge bg-light text-dark">{{ meetings|length }}</span></h6></div>
+        <div class="md-card-body">
+          {% if meetings %}
+            {% for m in meetings %}
+              <a href="{{ url_for('meetings.workspace', meeting_id=m.id) }}" class="d-block text-decoration-none mb-3">
+                <div class="fw-semibold" style="font-size:.86rem; color: var(--md-text);">{{ m.title }}</div>
+                <div class="text-muted" style="font-size:.76rem;">
+                  {{ m.start_datetime.strftime('%d %b %Y, %I:%M %p') }} &middot;
+                  <span class="status-badge status-{{ badge_class(m.status.value, MEETING_STATUS_BADGE) }}">{{ m.status.value.replace('_',' ') }}</span>
+                </div>
+              </a>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted text-center py-3" style="font-size:.83rem;">No meetings tagged.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="md-card h-100">
+        <div class="md-card-header"><h6><i class="bi bi-kanban me-2 text-primary"></i>Projects <span class="badge bg-light text-dark">{{ projects|length }}</span></h6></div>
+        <div class="md-card-body">
+          {% if projects %}
+            {% for p in projects %}
+              <a href="{{ url_for('projects.detail', project_id=p.id) }}" class="d-block text-decoration-none mb-3">
+                <div class="fw-semibold" style="font-size:.86rem; color: var(--md-text);">{{ p.name }}</div>
+                <div class="text-muted" style="font-size:.76rem;">
+                  {{ p.project_code }} &middot;
+                  <span class="status-badge status-{{ badge_class(p.status.value, TASK_STATUS_BADGE) }}">{{ p.status.value.replace('_',' ') }}</span>
+                </div>
+              </a>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted text-center py-3" style="font-size:.83rem;">No projects tagged.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="md-card h-100">
+        <div class="md-card-header"><h6><i class="bi bi-check2-square me-2 text-primary"></i>Tasks &amp; Action Items <span class="badge bg-light text-dark">{{ tasks|length }}</span></h6></div>
+        <div class="md-card-body">
+          {% if tasks %}
+            {% for t in tasks %}
+              <a href="{{ url_for('tasks.detail', task_id=t.id) }}" class="d-block text-decoration-none mb-3">
+                <div class="fw-semibold" style="font-size:.86rem; color: var(--md-text);">{{ t.title }}</div>
+                <div class="text-muted" style="font-size:.76rem;">
+                  {{ task_labels.get(t.id, '') }} &middot;
+                  <span class="status-badge status-{{ badge_class(t.status.value, TASK_STATUS_BADGE) }}">{{ t.status.value.replace('_',' ') }}</span>
+                  {% if t.due_date %} &middot; Due {{ t.due_date.strftime('%d %b %Y') }}{% endif %}
+                </div>
+              </a>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted text-center py-3" style="font-size:.83rem;">No tasks or action items tagged.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "layouts/base.html" %}
+{% block title %}{{ "Edit Event" if event else "New Event" }} — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <style>
+    .form-section-title { font-size: .95rem; font-weight: 700; margin-bottom: .1rem; }
+    .form-section-sub { font-size: .78rem; color: var(--md-text-muted, #7a8299); margin-bottom: .9rem; }
+    .radio-stack .form-check { margin-bottom: .35rem; }
+    .radio-inline-group { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+    .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .35rem .75rem; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="mb-2">
+    <a href="{{ url_for('corporate_calendar.mine') }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Corporate Calendar</a>
+  </div>
+
+  <div class="mb-3">
+    <h4 class="fw-bold mb-1">{{ "Edit Event" if event else "New Event" }}</h4>
+    <div class="text-muted" style="font-size:.85rem;">Corporate Calendar Event Submission Form — fields marked * are required.</div>
+  </div>
+
+  <div id="eventFormContainer">
+    {% include "corporate_calendar/_event_form_fields.html" %}
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const mineUrl = "{{ url_for('corporate_calendar.mine') }}";
+      wireCorporateEventForm(document.getElementById("eventFormContainer"), {
+        onSaved: function () { window.location = mineUrl; },
+        onDeleted: function () { window.location = mineUrl; },
+        onCancel: function () { window.location = mineUrl; },
+      });
+    });
+  </script>
+{% endblock %}

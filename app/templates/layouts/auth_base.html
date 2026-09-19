@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ product_name }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+<div class="auth-shell">
+  <div class="auth-hero">
+    {% block hero %}
+      <div class="auth-hero-inner">
+        <h1 class="auth-hero-product">{{ product_name }}</h1>
+        <div class="auth-hero-badge"><i class="bi bi-stars"></i> AI-enabled Office Assistant</div>
+        <div class="auth-hero-meet-row">
+          <img src="{{ url_for('static', filename='images/aura.png') }}" alt="AURA" class="auth-hero-avatar">
+          <span>Meet <strong>AURA</strong></span>
+        </div>
+        <p class="auth-hero-text">Your always-on office assistant — ask about meetings, tasks, and projects, and get answers out loud, grounded in your real data.</p>
+      </div>
+    {% endblock %}
+  </div>
+  <div class="auth-form-panel">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark">MD</div>
+        <div>
+          <div class="name">{{ product_name }}</div>
+          <div class="subtitle">{{ product_subtitle }}</div>
+        </div>
+      </div>
+      {% include "components/flash_messages.html" %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

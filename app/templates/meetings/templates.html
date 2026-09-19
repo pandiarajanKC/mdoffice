@@ -1,0 +1,56 @@
+{% extends "layouts/base.html" %}
+{% block title %}Meeting Templates — {{ product_name }}{% endblock %}
+
+{% block content %}
+  <div class="mb-2">
+    <a href="{{ url_for('meetings.list_view') }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Meetings</a>
+  </div>
+  <div class="mb-3">
+    <h4 class="fw-bold mb-1">Meeting Templates</h4>
+    <div class="text-muted" style="font-size:.85rem;">Reusable shapes for recurring meetings. Save one from any meeting's Overview tab, then pick it from the New Meeting form.</div>
+  </div>
+
+  {% if templates %}
+    <div class="md-card">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:.85rem;">
+          <thead>
+            <tr class="text-muted" style="font-size:.72rem; text-transform:uppercase;">
+              <th>Template Name</th>
+              <th>Meeting Title</th>
+              <th>Type</th>
+              <th>Duration</th>
+              <th>Location</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in templates %}
+              <tr>
+                <td class="fw-semibold">{{ t.name }}</td>
+                <td>{{ t.title }}</td>
+                <td class="text-muted">{{ t.meeting_type or '—' }}</td>
+                <td class="text-muted">{{ t.duration_minutes }} min</td>
+                <td class="text-muted">{{ t.location or '—' }}</td>
+                <td class="text-end">
+                  <form method="POST" action="{{ url_for('meetings.delete_template', template_id=t.id) }}" onsubmit="return confirm('Delete the &quot;{{ t.name }}&quot; template?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="md-card">
+      <div class="empty-state">
+        <i class="bi bi-collection"></i>
+        <div class="fw-semibold mb-1">No templates yet</div>
+        <div style="font-size:.83rem;">Open any meeting and use "Save as Template" from its Overview tab.</div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

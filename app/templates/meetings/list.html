@@ -1,0 +1,322 @@
+{% extends "layouts/base.html" %}
+{% block title %}Meetings — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">Meetings</h4>
+      <div class="text-muted" style="font-size:.85rem;">MD calendar meetings, notes, decisions and actions.</div>
+    </div>
+    {% if is_ea %}
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('meetings.templates') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-collection me-1"></i>Templates</a>
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newMeetingModal">
+          <i class="bi bi-plus-lg me-1"></i>New Meeting
+        </button>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
+    <ul class="nav nav-pills mb-0" style="font-size:.85rem;">
+      {% for key, label in [('today','Today'), ('upcoming','Upcoming'), ('completed','Completed'), ('all','All')] %}
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if view == key else '' }}" href="{{ url_for('meetings.list_view', view=key) }}">{{ label }} &middot; {{ view_counts[key] }}</a>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <form method="GET" class="d-flex align-items-end gap-2">
+      <input type="hidden" name="view" value="{{ view }}">
+      <div>
+        <label class="form-label small fw-semibold mb-1" style="font-size:.72rem;">From</label>
+        <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm">
+      </div>
+      <div>
+        <label class="form-label small fw-semibold mb-1" style="font-size:.72rem;">To</label>
+        <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm">
+      </div>
+      <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+      {% if date_from or date_to %}
+        <a href="{{ url_for('meetings.list_view', view=view) }}" class="btn btn-sm btn-light">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+
+  {% if meetings %}
+    <div class="d-flex flex-column gap-2">
+      {% for meeting in meetings %}
+        {% set eff = effectiveness_by_meeting.get(meeting.id) %}
+        <div class="md-card">
+          <div class="md-card-body d-flex align-items-start justify-content-between gap-3">
+            <div style="min-width:0; flex:1 1 auto;">
+              <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                <span class="fw-bold">{{ meeting.title }}</span>
+                <span class="status-badge status-{{ badge_class(meeting.status.value, MEETING_STATUS_BADGE) }}">{{ meeting.status.value.replace('_',' ') }}</span>
+                {% if meeting.confidentiality_level.value != 'NORMAL' %}
+                  <span class="status-badge status-hold"><i class="bi bi-lock"></i> {{ meeting.confidentiality_level.value.title() }}</span>
+                {% endif %}
+                {% if eff %}
+                  <button type="button" class="effectiveness-badge eff-{{ eff.tier }}" data-bs-toggle="modal" data-bs-target="#effModal{{ meeting.id }}" title="Meeting effectiveness score — click for details">
+                    {{ eff.score }}
+                  </button>
+                {% endif %}
+              </div>
+              {% set attendees = attendees_by_meeting.get(meeting.id, []) %}
+              <div class="text-muted" style="font-size:.82rem;">
+                <i class="bi bi-calendar3 me-1"></i>{{ meeting.start_datetime.strftime('%a, %d %b %Y') }}
+                &middot; {{ meeting.start_datetime.strftime('%I:%M %p') }} - {{ meeting.end_datetime.strftime('%I:%M %p') }}
+                {% if meeting.location %} &middot; <i class="bi bi-geo-alt me-1"></i>{{ meeting.location }}{% endif %}
+                {% if attendees %} &middot; <i class="bi bi-people me-1"></i>{{ attendees|length }} participant{{ 's' if attendees|length != 1 else '' }}{% endif %}
+              </div>
+              {% if attendees %}
+                <div class="d-flex flex-wrap gap-1 mt-1">
+                  {% for name in attendees[:6] %}
+                    <span class="status-badge status-hold">{{ name }}</span>
+                  {% endfor %}
+                  {% if attendees|length > 6 %}
+                    <span class="status-badge status-hold">+{{ attendees|length - 6 }} more</span>
+                  {% endif %}
+                </div>
+              {% endif %}
+              <div class="mt-1" style="font-size:.78rem;">
+                <span class="text-muted">Follow-up:</span>
+                <span class="fw-semibold {{ 'text-danger' if 'Overdue' in followups[meeting.id] else 'text-muted' }}">{{ followups[meeting.id] }}</span>
+              </div>
+            </div>
+            <div class="d-flex gap-2 text-nowrap" style="flex-shrink:0;">
+              <a href="{{ url_for('meetings.history', meeting_id=meeting.id) }}" class="btn btn-outline-secondary btn-sm text-nowrap" title="See past occurrences of this meeting"><i class="bi bi-clock-history me-1"></i>History</a>
+              <a href="{{ url_for('meetings.workspace', meeting_id=meeting.id) }}" class="btn btn-outline-primary btn-sm text-nowrap">Open Meeting</a>
+            </div>
+          </div>
+        </div>
+
+        {% if eff %}
+          <div class="modal fade" id="effModal{{ meeting.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h6 class="modal-title fw-bold">
+                    Meeting Effectiveness — <span class="eff-{{ eff.tier }}">{{ eff.score }}</span>/100
+                  </h6>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="text-muted mb-2" style="font-size:.78rem;">{{ meeting.title }} &middot; {{ meeting.start_datetime.strftime('%d %b %Y') }}</div>
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                      <thead>
+                        <tr><th>Component</th><th class="text-end">Weight</th><th class="text-end">Score</th><th class="text-end">Points</th></tr>
+                      </thead>
+                      <tbody>
+                        {% for c in eff.components %}
+                          <tr>
+                            <td>
+                              {{ c.label }}
+                              <div class="text-muted" style="font-size:.72rem;">{{ c.detail }}</div>
+                            </td>
+                            <td class="text-end">{{ c.weight }}%</td>
+                            <td class="text-end">{{ c.score }}</td>
+                            <td class="text-end fw-semibold">{{ c.points }}</td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                      <tfoot>
+                        <tr class="fw-bold border-top">
+                          <td colspan="3">Total</td>
+                          <td class="text-end">{{ eff.score }}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="md-card">
+      <div class="empty-state">
+        <i class="bi bi-calendar-x"></i>
+        <div class="fw-semibold mb-1">No meetings here</div>
+        <div style="font-size:.83rem;">
+          {% if is_ea %}Create a meeting to get started.{% else %}There are no meetings in this view.{% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if is_ea %}
+    <div class="modal fade" id="newMeetingModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('meetings.create') }}">
+          {{ form.hidden_tag() }}
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-bold">New Meeting</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              {% if templates %}
+                <div class="mb-2">
+                  <label class="form-label small fw-semibold">Start from Template</label>
+                  <select id="templateSelect" class="form-select form-select-sm">
+                    <option value="">— Blank meeting —</option>
+                    {% for t in templates %}
+                      <option value="{{ t.id }}">{{ t.name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endif %}
+              <div class="mb-2">
+                {{ form.title.label(class="form-label small fw-semibold") }}
+                {{ form.title(class="form-control form-control-sm") }}
+              </div>
+              <div class="mb-2">
+                {{ form.description.label(class="form-label small fw-semibold") }}
+                {{ form.description(class="form-control form-control-sm", rows=2) }}
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-4">
+                  {{ form.meeting_date.label(class="form-label small fw-semibold") }}
+                  <div class="input-icon">
+                    <i class="bi bi-calendar3"></i>
+                    {{ form.meeting_date(class="form-control form-control-sm") }}
+                  </div>
+                </div>
+                <div class="col-4">
+                  {{ form.start_time.label(class="form-label small fw-semibold") }}
+                  <div class="input-icon">
+                    <i class="bi bi-clock"></i>
+                    {{ form.start_time(class="form-control form-control-sm time-picker", id="start_time") }}
+                  </div>
+                </div>
+                <div class="col-4">
+                  {{ form.end_time.label(class="form-label small fw-semibold") }}
+                  <div class="input-icon">
+                    <i class="bi bi-clock-history"></i>
+                    {{ form.end_time(class="form-control form-control-sm time-picker", id="end_time") }}
+                  </div>
+                </div>
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-6">
+                  {{ form.location.label(class="form-label small fw-semibold") }}
+                  {{ form.location(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-6">
+                  {{ form.organizer.label(class="form-label small fw-semibold") }}
+                  {{ form.organizer(class="form-control form-control-sm") }}
+                </div>
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-6">
+                  {{ form.meeting_type.label(class="form-label small fw-semibold") }}
+                  {{ form.meeting_type(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-6">
+                  {{ form.confidentiality_level.label(class="form-label small fw-semibold") }}
+                  {{ form.confidentiality_level(class="form-select form-select-sm") }}
+                </div>
+              </div>
+              <div class="mb-2">
+                {{ form.attendees_emails.label(class="form-label small fw-semibold") }}
+                {{ form.attendees_emails(class="form-control form-control-sm") }}
+                <div class="text-muted" style="font-size:.72rem;">Pre-fills the "To" field on this meeting's follow-up email.</div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-sm btn-primary">Create Meeting</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const modalEl = document.getElementById("newMeetingModal");
+      if (!modalEl) return;
+
+      let startPicker, endPicker;
+      let meetingDurationMinutes = 60; // default; a chosen template overrides this
+
+      modalEl.addEventListener("shown.bs.modal", function () {
+        if (startPicker) return; // only initialize once per page load
+
+        const timeOptions = {
+          enableTime: true,
+          noCalendar: true,
+          dateFormat: "H:i",
+          altInput: true,
+          altFormat: "h:i K",
+          time_24hr: false,
+          minuteIncrement: 5,
+          static: true,
+        };
+
+        startPicker = flatpickr("#start_time", Object.assign({}, timeOptions, {
+          defaultHour: 10,
+          onChange: function (selectedDates) {
+            // Handy default: if End Time hasn't been touched yet, bump it
+            // by the meeting's duration (60 min, or a template's duration
+            // once one has been picked) after whatever Start Time was set.
+            if (selectedDates.length && endPicker && !endPicker.selectedDates.length) {
+              const suggestedEnd = new Date(selectedDates[0].getTime() + meetingDurationMinutes * 60 * 1000);
+              endPicker.setDate(suggestedEnd, true);
+            }
+          },
+        }));
+
+        endPicker = flatpickr("#end_time", Object.assign({}, timeOptions, { defaultHour: 11 }));
+      });
+
+      const templateSelect = document.getElementById("templateSelect");
+      if (templateSelect) {
+        const templates = {{ templates|tojson }};
+        templateSelect.addEventListener("change", function () {
+          const tpl = templates.find(function (t) { return String(t.id) === templateSelect.value; });
+          if (!tpl) {
+            meetingDurationMinutes = 60;
+            return;
+          }
+          document.getElementById("title").value = tpl.title;
+          document.getElementById("description").value = tpl.description;
+          document.getElementById("location").value = tpl.location;
+          document.getElementById("organizer").value = tpl.organizer;
+          document.getElementById("meeting_type").value = tpl.meeting_type;
+          document.getElementById("confidentiality_level").value = tpl.confidentiality_level;
+          meetingDurationMinutes = tpl.duration_minutes;
+
+          // If a start time is already picked, re-derive the end time from
+          // this template's duration instead of the default 60 minutes.
+          if (startPicker && startPicker.selectedDates.length) {
+            const end = new Date(startPicker.selectedDates[0].getTime() + tpl.duration_minutes * 60 * 1000);
+            endPicker.setDate(end, true);
+          }
+        });
+      }
+
+      {% if email_draft %}
+        // Arrived here via "Convert to Meeting" from an email — prefill
+        // title/description and open the same New Meeting modal; date and
+        // time are still the EA's own call, since the email doesn't say
+        // when this meeting should actually happen.
+        document.getElementById("title").value = {{ email_draft.title|tojson }};
+        document.getElementById("description").value = {{ email_draft.description|tojson }};
+        new bootstrap.Modal(modalEl).show();
+      {% endif %}
+    });
+  </script>
+{% endblock %}

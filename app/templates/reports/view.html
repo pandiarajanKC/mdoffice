@@ -1,0 +1,115 @@
+{% extends "layouts/base.html" %}
+{% block title %}{{ report.title }} — {{ product_name }}{% endblock %}
+{% block content %}
+  <div class="mb-2">
+    <a href="{{ url_for('reports.index') }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Reports</a>
+  </div>
+
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">{{ report.title }}</h4>
+      <div class="text-muted" style="font-size:.85rem;">{{ report.description }}</div>
+    </div>
+    <a href="{{ url_for('reports.view', report_key=report_key, export='excel') }}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-file-earmark-excel me-1"></i>Export to Excel
+    </a>
+  </div>
+
+  {% if is_ageing %}
+    <div class="row g-3 mb-3">
+      <div class="col-lg-5">
+        <div class="md-card h-100">
+          <div class="md-card-header"><h6>Open Tasks by Age</h6></div>
+          <div class="md-card-body"><canvas id="ageingChart" height="200"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="row g-2 h-100">
+          {% for bucket, count in summary.items() %}
+            <div class="col-6">
+              <div class="md-card stat-card">
+                <div class="stat-label">{{ bucket }} days</div>
+                <div class="stat-value">{{ count }}</div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% elif summary %}
+    <div class="row g-3 mb-3">
+      {% for key, value in summary.items() %}
+        <div class="col-6 col-md-3">
+          <div class="md-card stat-card">
+            <div class="stat-label">{{ key.replace('_', ' ').title() }}</div>
+            <div class="stat-value">{{ value if value is not none else '—' }}{{ '%' if 'rate' in key and value is not none else '' }}</div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if rows %}
+    <div class="md-card">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:.83rem;">
+          <thead>
+            <tr class="text-muted" style="font-size:.72rem; text-transform:uppercase;">
+              {% for col in report.columns %}
+                <th>{{ col.label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                {% for col in report.columns %}
+                  {% set value = row.get(col.key) %}
+                  <td>
+                    {% if col.type == 'status' %}
+                      <span class="status-badge status-{{ badge_class(value, TASK_STATUS_BADGE) }}">{{ value.replace('_',' ') if value else '—' }}</span>
+                    {% elif col.type == 'priority' %}
+                      <span class="status-badge status-{{ badge_class(value, PRIORITY_BADGE) }}">{{ value or '—' }}</span>
+                    {% elif col.type == 'health' %}
+                      <span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:{{ {'GREEN':'#17825a','AMBER':'#b5750a','RED':'#d92d20'}.get(value,'#98a2b3') }};" title="{{ value }}"></span>
+                    {% elif col.type == 'date' %}
+                      {{ value.strftime('%d %b %Y') if value else '—' }}
+                    {% elif col.type == 'percent' %}
+                      {{ (value ~ '%') if value is not none else '—' }}
+                    {% else %}
+                      {{ value if value is not none else '—' }}
+                    {% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="md-card">
+      <div class="empty-state py-5">
+        <i class="bi bi-inbox"></i>
+        <div class="fw-semibold mb-1">No data yet</div>
+        <div style="font-size:.83rem;">This report will populate once there are relevant records.</div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+  {% if is_ageing %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script>
+      new Chart(document.getElementById('ageingChart'), {
+        type: 'bar',
+        data: {
+          labels: {{ summary.keys()|list|tojson }},
+          datasets: [{ label: 'Open tasks', data: {{ summary.values()|list|tojson }}, backgroundColor: '#2f5fdd' }]
+        },
+        options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { precision: 0 } } } }
+      });
+    </script>
+  {% endif %}
+{% endblock %}

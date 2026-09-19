@@ -1,0 +1,101 @@
+{% extends "layouts/base.html" %}
+{% block title %}{{ meeting.title }} — History — {{ product_name }}{% endblock %}
+
+{% macro timeline_item(m) %}
+  <div class="timeline-item {{ 'is-current' if m.id == meeting.id else '' }}">
+    <span class="timeline-dot"></span>
+    <div class="timeline-date">
+      {{ m.start_datetime.strftime('%d %b %Y') }}
+      <span class="text-muted fw-normal" style="font-size:.75rem;">{{ m.start_datetime.strftime('%I:%M %p') }}</span>
+    </div>
+    {% set action_tasks = action_tasks_by_meeting.get(m.id, []) %}
+    <div class="md-card mt-2">
+      <div class="md-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-badge status-{{ badge_class(m.status.value, MEETING_STATUS_BADGE) }}">{{ m.status.value.replace('_',' ') }}</span>
+          {% if m.id == meeting.id %}<span class="status-badge status-completed">This one</span>{% endif %}
+        </div>
+        <a href="{{ url_for('meetings.workspace', meeting_id=m.id) }}" class="btn btn-sm btn-outline-primary">Open</a>
+      </div>
+      <div class="md-card-body">
+        {% if m.attendees_text or m.organizer %}
+          <div class="text-muted mb-2" style="font-size:.8rem;">
+            <i class="bi bi-people me-1"></i>{{ m.attendees_text or m.organizer }}
+          </div>
+        {% endif %}
+
+        {% if m.decisions %}
+          <div class="mb-2">
+            <div class="fw-semibold mb-1" style="font-size:.8rem;">Decisions</div>
+            <ul class="mb-0 ps-3" style="font-size:.82rem;">
+              {% for d in m.decisions %}<li>{{ d.decision_text }}</li>{% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+
+        {% if m.notes %}
+          <div class="mb-2">
+            <div class="fw-semibold mb-1" style="font-size:.8rem;">Notes</div>
+            <ul class="mb-0 ps-3" style="font-size:.82rem;">
+              {% for n in m.notes %}<li>{{ n.note_text }}</li>{% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+
+        {% if action_tasks %}
+          <div>
+            <div class="fw-semibold mb-1" style="font-size:.8rem;">Action Items</div>
+            <ul class="mb-0 ps-3" style="font-size:.82rem;">
+              {% for t in action_tasks %}
+                <li>
+                  {{ t.title }}
+                  <span class="status-badge status-{{ badge_class(t.status.value, TASK_STATUS_BADGE) }}">{{ t.status.value.replace('_',' ') }}</span>
+                  {% if assignees_by_task.get(t.id) %} &middot; {{ assignees_by_task[t.id]|join(', ') }}{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+
+        {% if not m.decisions and not m.notes and not action_tasks %}
+          <div class="text-muted" style="font-size:.8rem;">Nothing recorded for this occurrence.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
+{% block content %}
+  <div class="mb-2">
+    <a href="{{ url_for('meetings.workspace', meeting_id=meeting.id) }}" class="text-muted small"><i class="bi bi-arrow-left me-1"></i>Back to Meeting</a>
+  </div>
+
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">{{ meeting.title }}</h4>
+      <div class="text-muted" style="font-size:.85rem;">
+        History across {{ series|length }} occurrence{{ 's' if series|length != 1 else '' }}, most recent first.
+      </div>
+    </div>
+  </div>
+
+  {% if participants %}
+    <div class="md-card mb-4">
+      <div class="md-card-header"><h6 class="mb-0"><i class="bi bi-people me-2"></i>Everyone who's been in this series</h6></div>
+      <div class="md-card-body d-flex flex-wrap gap-2">
+        {% for name in participants %}
+          <span class="status-badge status-hold">{{ name }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="meeting-timeline meeting-timeline-active">
+    {% for m in recent_series %}{{ timeline_item(m) }}{% endfor %}
+  </div>
+  {% if older_series %}
+    <div class="meeting-timeline meeting-timeline-muted">
+      {% for m in older_series %}{{ timeline_item(m) }}{% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

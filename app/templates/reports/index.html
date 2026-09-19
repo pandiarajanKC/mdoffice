@@ -1,0 +1,26 @@
+{% extends "layouts/base.html" %}
+{% block title %}Reports — {{ product_name }}{% endblock %}
+{% block content %}
+  <div class="mb-3">
+    <h4 class="fw-bold mb-1">Reports</h4>
+    <div class="text-muted" style="font-size:.85rem;">Every report is computed live from current records and can be exported to Excel.</div>
+  </div>
+
+  <div class="row g-3">
+    {% for key, report in reports.items() %}
+      <div class="col-lg-4 col-md-6">
+        <a href="{{ url_for('reports.view', report_key=key) }}" class="text-decoration-none text-dark">
+          <div class="md-card h-100">
+            <div class="md-card-body d-flex gap-3 align-items-start">
+              <div class="stat-icon"><i class="bi {{ report.icon }}"></i></div>
+              <div>
+                <div class="fw-semibold" style="font-size:.9rem;">{{ report.title }}</div>
+                <div class="text-muted" style="font-size:.8rem;">{{ report.description }}</div>
+              </div>
+            </div>
+          </div>
+        </a>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

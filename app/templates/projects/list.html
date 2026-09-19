@@ -1,0 +1,337 @@
+{% extends "layouts/base.html" %}
+{% block title %}Projects — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">Projects</h4>
+      <div class="text-muted" style="font-size:.85rem;">Independent projects and their tasks, tagged meetings and teams — {{ total }} total{% if shown < total %} (showing first {{ shown }}){% endif %}.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <button type="button" id="clearTableFilters" class="btn btn-sm btn-light"><i class="bi bi-x-circle me-1"></i>Clear Filters</button>
+      {% if is_ea %}
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newProjectModal">
+          <i class="bi bi-plus-lg me-1"></i>New Project
+        </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if projects %}
+    <div class="md-card">
+      <div class="table-responsive">
+        <table id="projectsTable" class="table table-hover align-middle mb-0" style="font-size:.83rem; width:100%;">
+          <thead>
+            <tr class="text-muted" style="font-size:.72rem; text-transform:uppercase;">
+              <th>Code</th>
+              <th>Name</th>
+              <th>Owner</th>
+              <th>Status</th>
+              <th>Priority</th>
+              <th>Health</th>
+              <th>Progress</th>
+              <th>Target Date</th>
+              {% if is_ea %}<th></th>{% endif %}
+            </tr>
+            <tr class="table-filter-row">
+              <th><input type="text" class="form-control form-control-sm column-filter" data-col="0" placeholder="Code..."></th>
+              <th><input type="text" class="form-control form-control-sm column-filter" data-col="1" placeholder="Name..."></th>
+              <th><input type="text" class="form-control form-control-sm column-filter" data-col="2" placeholder="Owner..."></th>
+              <th>
+                <select class="form-select form-select-sm column-filter" data-col="3">
+                  <option value="">All</option>
+                  <option value="OPEN">Open</option>
+                  <option value="IN PROGRESS">In Progress</option>
+                  <option value="ON HOLD">On Hold</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+              </th>
+              <th>
+                <select class="form-select form-select-sm column-filter" data-col="4">
+                  <option value="">All</option>
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+              </th>
+              <th>
+                <select class="form-select form-select-sm column-filter" data-col="5">
+                  <option value="">All</option>
+                  <option value="Green">Green</option>
+                  <option value="Amber">Amber</option>
+                  <option value="Red">Red</option>
+                </select>
+              </th>
+              <th></th>
+              <th></th>
+              {% if is_ea %}<th></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for project in projects %}
+              {% set owner = owners.get(project.owner_employee_code) %}
+              {% set owner_name = owner.name if owner else project.owner_employee_code %}
+              {% set health = healths[project.id] %}
+              <tr style="cursor:pointer;" onclick="window.location='{{ url_for('projects.detail', project_id=project.id) }}'">
+                <td class="text-muted">{{ project.project_code }}</td>
+                <td class="fw-semibold">{{ project.name }}</td>
+                <td>{{ owner_name }}</td>
+                <td><span class="status-badge status-{{ badge_class(project.status.value, TASK_STATUS_BADGE) }}">{{ project.status.value.replace('_',' ') }}</span></td>
+                <td data-order="{{ priority_rank[project.priority.value] }}"><span class="status-badge status-{{ badge_class(project.priority.value, PRIORITY_BADGE) }}">{{ project.priority.value }}</span></td>
+                <td data-order="{{ health_rank[health] }}">
+                  <span class="d-inline-block rounded-circle me-1" style="width:10px;height:10px;background:{{ {'GREEN':'#17825a','AMBER':'#b5750a','RED':'#d92d20'}[health] }};"></span>{{ health.title() }}
+                </td>
+                <td data-order="{{ project.progress_percent }}">
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="progress" style="height:6px; width:80px;">
+                      <div class="progress-bar" role="progressbar" style="width: {{ project.progress_percent }}%;"></div>
+                    </div>
+                    <span class="text-muted">{{ project.progress_percent }}%</span>
+                  </div>
+                </td>
+                <td data-order="{{ project.target_date.isoformat() if project.target_date else '9999-12-31' }}">
+                  {{ project.target_date.strftime('%d %b %Y') if project.target_date else '—' }}
+                </td>
+                {% if is_ea %}
+                  <td class="text-end" data-order="0" onclick="event.stopPropagation();">
+                    <div class="d-flex justify-content-end gap-1">
+                      <button type="button" class="btn btn-sm btn-outline-secondary edit-project-btn"
+                              data-project-id="{{ project.id }}"
+                              data-name="{{ project.name }}"
+                              data-description="{{ project.description or '' }}"
+                              data-owner-code="{{ project.owner_employee_code }}"
+                              data-owner-name="{{ owner_name }}"
+                              data-start-date="{{ project.start_date.isoformat() if project.start_date else '' }}"
+                              data-target-date="{{ project.target_date.isoformat() if project.target_date else '' }}"
+                              data-priority="{{ project.priority.value }}"
+                              title="Edit"><i class="bi bi-pencil"></i></button>
+                      <form method="POST" action="{{ url_for('projects.delete', project_id=project.id) }}"
+                            onsubmit="return confirm('Delete this project? Its tasks and meeting tags are removed too. This cannot be undone.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                      </form>
+                    </div>
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="md-card">
+      <div class="empty-state">
+        <i class="bi bi-kanban"></i>
+        <div class="fw-semibold mb-1">No projects here</div>
+        <div style="font-size:.83rem;">{% if is_ea %}Create a project to get started.{% else %}There are no projects in this view.{% endif %}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if is_ea %}
+    <div class="modal fade" id="newProjectModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('projects.create') }}">
+          {{ form.hidden_tag() }}
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-bold">New Project</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="row g-2 mb-2">
+                <div class="col-8">
+                  {{ form.name.label(class="form-label small fw-semibold") }}
+                  {{ form.name(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-4">
+                  {{ form.project_code.label(class="form-label small fw-semibold") }}
+                  {{ form.project_code(class="form-control form-control-sm", placeholder="Auto") }}
+                </div>
+              </div>
+              <div class="mb-2">
+                {{ form.description.label(class="form-label small fw-semibold") }}
+                {{ form.description(class="form-control form-control-sm", rows=2) }}
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Owner</label>
+                <select id="ownerSelect" name="owner_employee_code" class="form-select form-select-sm"></select>
+              </div>
+              <div class="row g-2">
+                <div class="col-4">
+                  {{ form.start_date.label(class="form-label small fw-semibold") }}
+                  {{ form.start_date(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-4">
+                  {{ form.target_date.label(class="form-label small fw-semibold") }}
+                  {{ form.target_date(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-4">
+                  {{ form.priority.label(class="form-label small fw-semibold") }}
+                  {{ form.priority(class="form-select form-select-sm") }}
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-sm btn-primary">Create Project</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit Project Modal — one shared modal, populated per-row by .edit-project-btn's data-* attributes -->
+    <div class="modal fade" id="editProjectModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="POST" id="editProjectForm" action="{{ url_for('projects.edit', project_id=999999) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-bold">Edit Project</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Project Name</label>
+                <input type="text" name="name" id="editProjectName" class="form-control form-control-sm" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Description</label>
+                <textarea name="description" id="editProjectDescription" class="form-control form-control-sm" rows="2"></textarea>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Owner</label>
+                <select id="editOwnerSelect" name="owner_employee_code" class="form-select form-select-sm"></select>
+              </div>
+              <div class="row g-2">
+                <div class="col-4">
+                  <label class="form-label small fw-semibold">Start Date</label>
+                  <input type="date" name="start_date" id="editProjectStartDate" class="form-control form-control-sm">
+                </div>
+                <div class="col-4">
+                  <label class="form-label small fw-semibold">Target Date</label>
+                  <input type="date" name="target_date" id="editProjectTargetDate" class="form-control form-control-sm">
+                </div>
+                <div class="col-4">
+                  <label class="form-label small fw-semibold">Priority</label>
+                  <select name="priority" id="editProjectPriority" class="form-select form-select-sm">
+                    {% for p in ['LOW','MEDIUM','HIGH','CRITICAL'] %}
+                      <option value="{{ p }}">{{ p.title() }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-sm btn-primary">Save Changes</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.8/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/js/dataTables.bootstrap5.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      function employeeTomSelect(id, placeholder) {
+        var el = document.getElementById(id);
+        if (!el) return null;
+        return new TomSelect(el, {
+          valueField: "code",
+          labelField: "label",
+          searchField: "label",
+          maxItems: 1,
+          placeholder: placeholder,
+          load: function (query, callback) {
+            if (query.length < 2) return callback();
+            fetch("{{ url_for('employees.search') }}?q=" + encodeURIComponent(query))
+              .then((r) => r.json())
+              .then((json) => callback(json))
+              .catch(() => callback());
+          },
+        });
+      }
+      employeeTomSelect("ownerSelect", "Search employees by name or code...");
+      var editOwnerSelect = employeeTomSelect("editOwnerSelect", "Search employees by name or code...");
+
+      {% if email_draft %}
+        // Arrived here via "Convert to Project" from an email — prefill and
+        // open the same New Project modal instead of a one-off form.
+        document.getElementById("name").value = {{ email_draft.title|tojson }};
+        document.getElementById("description").value = {{ email_draft.description|tojson }};
+        new bootstrap.Modal(document.getElementById("newProjectModal")).show();
+      {% endif %}
+
+      if (!document.getElementById("projectsTable")) return;
+
+      // Column filters live in the table's own header now, instead of a
+      // separate GET-filter form above it — everything below filters the
+      // already-loaded rows client-side, instantly.
+      var table = $("#projectsTable").DataTable({
+        order: [],
+        pageLength: 25,
+        lengthMenu: [10, 25, 50, 100],
+        orderCellsTop: true,
+        language: { search: "Quick filter:", lengthMenu: "Show _MENU_ rows" },
+      });
+
+      document.querySelectorAll(".column-filter[data-col]").forEach(function (input) {
+        var col = parseInt(input.dataset.col, 10);
+        input.addEventListener(input.tagName === "SELECT" ? "change" : "keyup", function () {
+          table.column(col).search(input.value).draw();
+        });
+      });
+
+      var clearBtn = document.getElementById("clearTableFilters");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+          document.querySelectorAll(".column-filter").forEach(function (el) { el.value = ""; });
+          table.search("").columns().search("").draw();
+        });
+      }
+
+      var editForm = document.getElementById("editProjectForm");
+      var editUrlTemplate = editForm ? editForm.getAttribute("action") : "";
+      document.querySelectorAll(".edit-project-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (editForm) editForm.setAttribute("action", editUrlTemplate.replace("999999", btn.dataset.projectId));
+          document.getElementById("editProjectName").value = btn.dataset.name || "";
+          document.getElementById("editProjectDescription").value = btn.dataset.description || "";
+          document.getElementById("editProjectStartDate").value = btn.dataset.startDate || "";
+          document.getElementById("editProjectTargetDate").value = btn.dataset.targetDate || "";
+          document.getElementById("editProjectPriority").value = btn.dataset.priority || "MEDIUM";
+
+          if (editOwnerSelect) {
+            editOwnerSelect.clear(true);
+            editOwnerSelect.clearOptions();
+            if (btn.dataset.ownerCode) {
+              editOwnerSelect.addOption({ code: btn.dataset.ownerCode, label: btn.dataset.ownerName + " (" + btn.dataset.ownerCode + ")" });
+              editOwnerSelect.addItem(btn.dataset.ownerCode, true);
+            }
+          }
+
+          var modalEl = document.getElementById("editProjectModal");
+          if (modalEl && window.bootstrap) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+          }
+        });
+      });
+    });
+  </script>
+{% endblock %}

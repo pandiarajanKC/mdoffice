@@ -1,0 +1,18 @@
+{% extends "layouts/base.html" %}
+{% block title %}Calendar — {{ product_name }}{% endblock %}
+{% block content %}
+  <div class="md-card">
+    <div class="empty-state py-5">
+      <i class="bi bi-calendar3"></i>
+      <div class="fw-semibold mb-2">Google Calendar isn't configured yet</div>
+      <div style="font-size:.85rem; max-width:480px; margin:0 auto;">
+        An administrator needs to create a Google OAuth client (Google Cloud Console →
+        APIs &amp; Services → Credentials) and set <code>GOOGLE_OAUTH_CLIENT_ID</code>,
+        <code>GOOGLE_OAUTH_CLIENT_SECRET</code> and <code>GOOGLE_OAUTH_REDIRECT_URI</code>
+        in the application's <code>.env</code> file. See the README's Calendar Sync
+        section for exact steps. Once configured, this page will show a
+        "Connect Google Calendar" button — no code changes needed.
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,322 @@
+{% extends "layouts/base.html" %}
+{% block title %}Tasks — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">Tasks</h4>
+      <div class="text-muted" style="font-size:.85rem;">Standalone tasks — not tied to any meeting or project — {{ total }} total{% if shown < total %} (showing first {{ shown }}){% endif %}.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <button type="button" id="clearTableFilters" class="btn btn-sm btn-light"><i class="bi bi-x-circle me-1"></i>Clear Filters</button>
+      {% if is_ea %}
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newTaskModal">
+          <i class="bi bi-plus-lg me-1"></i>New Task
+        </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if tasks %}
+    <div class="md-card">
+      <div class="table-responsive">
+        <table id="generalTasksTable" class="table table-hover align-middle mb-0" style="font-size:.83rem; width:100%;">
+          <thead>
+            <tr class="text-muted" style="font-size:.72rem; text-transform:uppercase;">
+              <th>Task</th>
+              <th>Assigned</th>
+              <th>Priority</th>
+              <th>Due</th>
+              <th>Status</th>
+              <th>Age</th>
+              {% if is_ea %}<th></th>{% endif %}
+            </tr>
+            <tr class="table-filter-row">
+              <th><input type="text" class="form-control form-control-sm column-filter" data-col="0" placeholder="Filter title..."></th>
+              <th><input type="text" class="form-control form-control-sm column-filter" data-col="1" placeholder="Assignee..."></th>
+              <th>
+                <select class="form-select form-select-sm column-filter" data-col="2">
+                  <option value="">All</option>
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+              </th>
+              <th>
+                <div class="form-check text-nowrap">
+                  <input type="checkbox" class="form-check-input" id="overdueOnlyFilter">
+                  <label class="form-check-label" for="overdueOnlyFilter" style="font-size:.7rem;">Overdue</label>
+                </div>
+              </th>
+              <th>
+                <select class="form-select form-select-sm column-filter" data-col="4">
+                  <option value="">All</option>
+                  <option value="OPEN">Open</option>
+                  <option value="IN PROGRESS">In Progress</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="ON HOLD">On Hold</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+              </th>
+              <th></th>
+              {% if is_ea %}<th></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in tasks %}
+              <tr style="cursor:pointer;" onclick="window.location='{{ url_for('tasks.detail', task_id=task.id) }}'">
+                <td class="fw-semibold">
+                  {{ task.title }}
+                  {% if task.description %}<span class="d-none">{{ task.description }}</span>{% endif %}
+                </td>
+                <td>{{ assignees_by_task.get(task.id, [])|join(', ') or 'Unassigned' }}</td>
+                <td data-order="{{ priority_rank[task.priority.value] }}"><span class="status-badge status-{{ badge_class(task.priority.value, PRIORITY_BADGE) }}">{{ task.priority.value }}</span></td>
+                <td data-order="{{ task.due_date.isoformat() if task.due_date else '9999-12-31' }}">
+                  {{ task.due_date.strftime('%d %b %Y') if task.due_date else '—' }}
+                  {% if task.is_overdue %}<span class="status-badge status-overdue ms-1">OVERDUE</span>{% endif %}
+                </td>
+                <td><span class="status-badge status-{{ badge_class(task.status.value, TASK_STATUS_BADGE) }}">{{ task.status.value.replace('_',' ') }}</span></td>
+                <td data-order="{{ ages[task.id] }}" class="text-muted">{{ ages[task.id] }}d</td>
+                {% if is_ea %}
+                  <td class="text-end" data-order="0" onclick="event.stopPropagation();">
+                    <div class="d-flex justify-content-end gap-1">
+                      {% if task.status.value not in ('COMPLETED', 'CANCELLED') %}
+                        <form method="POST" action="{{ url_for('tasks.nudge', task_id=task.id) }}">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <button type="submit" class="btn btn-sm btn-outline-primary" title="Send a reminder to the assignee(s)"><i class="bi bi-bell"></i></button>
+                        </form>
+                      {% endif %}
+                      <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn"
+                              data-task-id="{{ task.id }}"
+                              data-title="{{ task.title }}"
+                              data-description="{{ task.description or '' }}"
+                              data-due-date="{{ task.due_date.isoformat() if task.due_date else '' }}"
+                              data-priority="{{ task.priority.value }}"
+                              data-assignees='{{ assignee_details_by_task.get(task.id, [])|tojson }}'
+                              title="Edit"><i class="bi bi-pencil"></i></button>
+                      <form method="POST" action="{{ url_for('tasks.delete', task_id=task.id) }}"
+                            onsubmit="return confirm('Delete this task? This cannot be undone.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                      </form>
+                    </div>
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="md-card">
+      <div class="empty-state">
+        <i class="bi bi-check2-square"></i>
+        <div class="fw-semibold mb-1">No standalone tasks yet</div>
+        <div style="font-size:.83rem;">{% if is_ea %}Create one to assign work that isn't tied to a meeting or project.{% else %}There are no matching tasks.{% endif %}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if is_ea %}
+    <div class="modal fade" id="newTaskModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('tasks.create_general') }}">
+          {{ form.hidden_tag() }}
+          <input type="hidden" name="after_create" id="afterCreateField" value="">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-bold">New Task</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                {{ form.title.label(class="form-label small fw-semibold") }}
+                {{ form.title(class="form-control form-control-sm") }}
+              </div>
+              <div class="mb-2">
+                {{ form.description.label(class="form-label small fw-semibold") }}
+                {{ form.description(class="form-control form-control-sm", rows=2) }}
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Assigned To</label>
+                <select id="taskAssigneeSelect" name="employee_codes" multiple class="form-select form-select-sm"></select>
+              </div>
+              <div class="row g-2">
+                <div class="col-6">
+                  {{ form.due_date.label(class="form-label small fw-semibold") }}
+                  {{ form.due_date(class="form-control form-control-sm") }}
+                </div>
+                <div class="col-6">
+                  {{ form.priority.label(class="form-label small fw-semibold") }}
+                  {{ form.priority(class="form-select form-select-sm") }}
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-sm btn-primary">Create Task</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit Task Modal — one shared modal, populated per-row by .edit-task-btn's data-* attributes -->
+    <div class="modal fade" id="editTaskModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="POST" id="editTaskForm" action="{{ url_for('tasks.edit', task_id=999999) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-bold">Edit Task</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Title</label>
+                <input type="text" name="title" id="editTaskTitle" class="form-control form-control-sm" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Details</label>
+                <textarea name="description" id="editTaskDescription" class="form-control form-control-sm" rows="2"></textarea>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Assigned To</label>
+                <select id="editAssigneeSelect" name="employee_codes" multiple class="form-select form-select-sm"></select>
+              </div>
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label small fw-semibold">Due Date</label>
+                  <input type="date" name="due_date" id="editTaskDueDate" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label small fw-semibold">Priority</label>
+                  <select name="priority" id="editTaskPriority" class="form-select form-select-sm">
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="CRITICAL">Critical</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-sm btn-primary">Save Changes</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.8/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/js/dataTables.bootstrap5.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      function employeeTomSelect(id, opts) {
+        var el = document.getElementById(id);
+        if (!el) return null;
+        return new TomSelect(el, Object.assign({
+          valueField: "code",
+          labelField: "label",
+          searchField: "label",
+          placeholder: "Search employees by name or code...",
+          load: function (query, callback) {
+            if (query.length < 2) return callback();
+            fetch("{{ url_for('employees.search') }}?q=" + encodeURIComponent(query))
+              .then((r) => r.json())
+              .then((json) => callback(json))
+              .catch(() => callback());
+          },
+        }, opts || {}));
+      }
+      employeeTomSelect("taskAssigneeSelect", {});
+      var editAssigneeSelect = employeeTomSelect("editAssigneeSelect", {});
+
+      {% if email_draft %}
+        // Arrived here via "Convert to Task/Action Tracker" from an email —
+        // prefill and open the New Task modal instead of a one-off form.
+        document.getElementById("title").value = {{ email_draft.title|tojson }};
+        document.getElementById("description").value = {{ email_draft.description|tojson }};
+        document.getElementById("afterCreateField").value = {{ email_draft.target|tojson }};
+        new bootstrap.Modal(document.getElementById("newTaskModal")).show();
+      {% endif %}
+
+      if (!document.getElementById("generalTasksTable")) return;
+
+      // Column filters live in the table's own header now, instead of a
+      // separate GET-filter form above it — everything below filters the
+      // already-loaded rows client-side, instantly.
+      var table = $("#generalTasksTable").DataTable({
+        order: [],
+        pageLength: 25,
+        lengthMenu: [10, 25, 50, 100],
+        orderCellsTop: true,
+        language: { search: "Quick filter:", lengthMenu: "Show _MENU_ rows" },
+      });
+
+      document.querySelectorAll(".column-filter[data-col]").forEach(function (input) {
+        var col = parseInt(input.dataset.col, 10);
+        input.addEventListener(input.tagName === "SELECT" ? "change" : "keyup", function () {
+          table.column(col).search(input.value).draw();
+        });
+      });
+
+      var overdueOnlyFilter = document.getElementById("overdueOnlyFilter");
+      if (overdueOnlyFilter) {
+        overdueOnlyFilter.addEventListener("change", function () {
+          table.column(3).search(overdueOnlyFilter.checked ? "OVERDUE" : "").draw();
+        });
+      }
+
+      var clearBtn = document.getElementById("clearTableFilters");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+          document.querySelectorAll(".column-filter").forEach(function (el) { el.value = ""; });
+          if (overdueOnlyFilter) overdueOnlyFilter.checked = false;
+          table.search("").columns().search("").draw();
+        });
+      }
+
+      var editForm = document.getElementById("editTaskForm");
+      var editUrlTemplate = editForm ? editForm.getAttribute("action") : "";
+      document.querySelectorAll(".edit-task-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (editForm) editForm.setAttribute("action", editUrlTemplate.replace("999999", btn.dataset.taskId));
+          document.getElementById("editTaskTitle").value = btn.dataset.title || "";
+          document.getElementById("editTaskDescription").value = btn.dataset.description || "";
+          document.getElementById("editTaskDueDate").value = btn.dataset.dueDate || "";
+          document.getElementById("editTaskPriority").value = btn.dataset.priority || "MEDIUM";
+
+          if (editAssigneeSelect) {
+            editAssigneeSelect.clear(true);
+            editAssigneeSelect.clearOptions();
+            var assignees = [];
+            try { assignees = JSON.parse(btn.dataset.assignees || "[]"); } catch (e) {}
+            assignees.forEach(function (a) {
+              editAssigneeSelect.addOption({ code: a.code, label: a.name + " (" + a.code + ")" });
+              editAssigneeSelect.addItem(a.code, true);
+            });
+          }
+
+          var modalEl = document.getElementById("editTaskModal");
+          if (modalEl && window.bootstrap) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+          }
+        });
+      });
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,147 @@
+{% extends "layouts/base.html" %}
+{% block title %}My Dashboard — {{ product_name }}{% endblock %}
+{% block content %}
+  <div class="d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">Good {{ day_period }}, {{ current_user_display_name }}</h4>
+      <div class="text-muted" style="font-size:.85rem;">{{ today_str }} &middot; <span class="role-pill">Employee</span></div>
+    </div>
+    <a href="{{ url_for('tasks.mine') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-check2-square me-1"></i>My Tasks</a>
+  </div>
+
+  <div class="row g-3 mb-3">
+    {% for label, value, icon in [
+      ('Assigned', stats.assigned, 'bi-inbox'),
+      ('Open', stats.open, 'bi-circle'),
+      ('In Progress', stats.in_progress, 'bi-hourglass-split'),
+      ('Completed', stats.completed, 'bi-check-circle'),
+      ('On Hold', stats.on_hold, 'bi-pause-circle'),
+      ('Overdue', stats.overdue, 'bi-exclamation-triangle'),
+      ('Due This Week', stats.due_this_week, 'bi-calendar-week'),
+    ] %}
+      <div class="col-6 col-md-3 col-lg-3">
+        <div class="md-card stat-card d-flex align-items-center justify-content-between">
+          <div>
+            <div class="stat-label">{{ label }}</div>
+            <div class="stat-value">{{ value }}</div>
+          </div>
+          <div class="stat-icon"><i class="bi {{ icon }}"></i></div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="md-card h-100">
+        <div class="md-card-header"><h6><i class="bi bi-fire me-2 text-primary"></i>My Priority Tasks</h6></div>
+        <div class="md-card-body">
+          {% if stats.priority_tasks %}
+            <div class="d-flex flex-column gap-2">
+              {% for task in stats.priority_tasks %}
+                <a href="{{ url_for('tasks.detail', task_id=task.id) }}" class="text-decoration-none text-dark d-flex justify-content-between align-items-start border-bottom pb-2">
+                  <div>
+                    <div class="fw-semibold" style="font-size:.85rem;">{{ task.title }}</div>
+                    <div class="text-muted" style="font-size:.75rem;">{{ task.due_date.strftime('%d %b %Y') if task.due_date else 'No due date' }}</div>
+                  </div>
+                  <span class="status-badge status-{{ badge_class(task.priority.value, PRIORITY_BADGE) }}">{{ task.priority.value }}</span>
+                </a>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-muted small">No open priority tasks right now.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="md-card h-100">
+        <div class="md-card-header"><h6><i class="bi bi-calendar-event me-2 text-primary"></i>Upcoming Due Dates</h6></div>
+        <div class="md-card-body">
+          {% if stats.upcoming_due %}
+            <div class="d-flex flex-column gap-2">
+              {% for task in stats.upcoming_due %}
+                <a href="{{ url_for('tasks.detail', task_id=task.id) }}" class="text-decoration-none text-dark d-flex justify-content-between align-items-start border-bottom pb-2">
+                  <div class="fw-semibold" style="font-size:.85rem;">{{ task.title }}</div>
+                  <span class="text-muted" style="font-size:.78rem;">{{ task.due_date.strftime('%d %b %Y') }}</span>
+                </a>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-muted small">Nothing due soon.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="md-card h-100">
+        <div class="md-card-header"><h6><i class="bi bi-clock-history me-2 text-primary"></i>Recently Updated</h6></div>
+        <div class="md-card-body">
+          {% if stats.recently_updated %}
+            <div class="d-flex flex-column gap-2">
+              {% for task in stats.recently_updated %}
+                <a href="{{ url_for('tasks.detail', task_id=task.id) }}" class="text-decoration-none text-dark d-flex justify-content-between align-items-start border-bottom pb-2">
+                  <div class="fw-semibold" style="font-size:.85rem;">{{ task.title }}</div>
+                  <span class="status-badge status-{{ badge_class(task.status.value, TASK_STATUS_BADGE) }}">{{ task.status.value.replace('_',' ') }}</span>
+                </a>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-muted small">No task activity yet.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="md-card h-100">
+        <div class="md-card-header"><h6><i class="bi bi-diagram-3 me-2 text-primary"></i>My Workload</h6></div>
+        <div class="md-card-body">
+          {% if stats.by_project or stats.by_meeting %}
+            {% for name, count in stats.by_project.items() %}
+              <div class="d-flex justify-content-between align-items-center py-1" style="font-size:.85rem;">
+                <span><i class="bi bi-kanban me-1 text-muted"></i>{{ name }}</span>
+                <span class="status-badge status-open">{{ count }}</span>
+              </div>
+            {% endfor %}
+            {% for name, count in stats.by_meeting.items() %}
+              <div class="d-flex justify-content-between align-items-center py-1" style="font-size:.85rem;">
+                <span><i class="bi bi-people me-1 text-muted"></i>{{ name }}</span>
+                <span class="status-badge status-open">{{ count }}</span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted small">No task sources yet.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="md-card">
+        <div class="md-card-header"><h6><i class="bi bi-person-badge me-2 text-primary"></i>My Profile</h6></div>
+        <div class="md-card-body">
+          {% if profile %}
+            <dl class="row mb-0" style="font-size:.85rem;">
+              <dt class="col-5 text-muted fw-normal">Employee Code</dt><dd class="col-7">{{ profile.employee_code }}</dd>
+              <dt class="col-5 text-muted fw-normal">Name</dt><dd class="col-7">{{ profile.name }}</dd>
+              <dt class="col-5 text-muted fw-normal">Department</dt><dd class="col-7">{{ profile.department or '—' }}</dd>
+              <dt class="col-5 text-muted fw-normal">Designation</dt><dd class="col-7">{{ profile.designation or '—' }}</dd>
+              <dt class="col-5 text-muted fw-normal">Location</dt><dd class="col-7">{{ profile.location or '—' }}</dd>
+              <dt class="col-5 text-muted fw-normal">Email</dt><dd class="col-7">{{ profile.email or '—' }}</dd>
+            </dl>
+          {% else %}
+            <div class="text-muted small">Profile details are currently unavailable.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      {% include "components/roadmap_card.html" %}
+    </div>
+  </div>
+{% endblock %}

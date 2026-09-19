@@ -1,0 +1,14 @@
+{% extends "layouts/base.html" %}
+{% block title %}MD Dashboard — {{ product_name }}{% endblock %}
+{% block content %}
+  <div class="d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-1">Good {{ day_period }}, {{ current_user_display_name }}</h4>
+      <div class="text-muted" style="font-size:.85rem;">{{ today_str }} &middot; <span class="role-pill">Managing Director</span></div>
+    </div>
+    <a href="{{ url_for('meetings.list_view') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-people me-1"></i>View Meetings</a>
+  </div>
+
+  {% include "components/summary_cards.html" %}
+  {% include "components/today_overdue_cards.html" %}
+{% endblock %}

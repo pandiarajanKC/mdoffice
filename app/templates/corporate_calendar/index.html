@@ -1,0 +1,469 @@
+{% extends "layouts/base.html" %}
+{% block title %}Corporate Calendar — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+  <style>
+    .detail-row { margin-bottom: .6rem; }
+    .detail-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--md-text-muted, #7a8299); font-weight: 700; margin-bottom: .1rem; }
+    .division-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+    #eventTableWrap table { font-size: .8rem; }
+    #eventTableWrap .expand-btn { border: none; background: none; padding: 0 .25rem; color: var(--md-primary); }
+    #eventTableWrap tr.detail-tr td { background: #f4f5f9; padding: 0; }
+    #eventTableWrap tr.event-row:target { background: var(--md-warning-soft) !important; }
+    #eventTableWrap .table-priority-badge { color: #fff; font-weight: 600; }
+    #eventTableWrap .conflict-flag { color: var(--md-danger); margin-left: .35rem; cursor: help; }
+
+    /* The expandable detail panel — grouped into the same Section 2-5
+       cards as the submission form (see event_form.html), just lighter
+       weight, since this is read-only and inline inside a table row. */
+    .detail-panel { padding: .9rem .75rem 1rem; }
+    .detail-panel-section { background: #fff; border: 1px solid rgba(20, 25, 45, .07); border-radius: 10px; padding: .75rem 1rem; margin-bottom: .65rem; }
+    .detail-panel-section:last-of-type { margin-bottom: 0; }
+    .detail-panel-title { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--md-primary-dark); margin-bottom: .55rem; display: flex; align-items: center; gap: .4rem; }
+    .detail-panel-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem 1.5rem; }
+    .detail-panel-field-wide { grid-column: 1 / -1; }
+    .detail-panel-field .detail-label { font-size: .68rem; margin-bottom: .1rem; }
+    .detail-panel-field .detail-value { font-size: .82rem; color: var(--md-text, #1c2130); white-space: pre-wrap; }
+    .detail-panel-footer { font-size: .72rem; color: var(--md-text-muted, #8992a8); padding: 0 .25rem; }
+
+    .yn-badge { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 700; }
+    .yn-badge.yn-flagged { background: var(--md-warning-soft); color: #C97F0A; }
+    .yn-badge.yn-plain { background: #eef0f5; color: #667085; }
+
+    .conflict-alert { display: flex; gap: .6rem; align-items: flex-start; background: var(--md-danger-soft); color: #D42655; border-radius: 10px; padding: .6rem .9rem; margin-bottom: .65rem; font-size: .8rem; }
+    .conflict-alert i { font-size: 1rem; margin-top: .1rem; flex: none; }
+    .conflict-alert a { color: #D42655; font-weight: 700; text-decoration: underline; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="cal-hero mb-3">
+    <h4 class="fw-bold mb-1">Corporate Calendar</h4>
+    <div class="text-muted" style="font-size:.85rem;">
+      Every division's events, posted by that division's nominated employee — color-coded below. Read-only here; each employee manages their own events.
+    </div>
+  </div>
+
+  <div class="cal-layout">
+    <div class="md-card">
+      <div class="md-card-body">
+        <div class="cal-toolbar">
+          <div class="cal-toolbar-left">
+            <button type="button" class="cal-today-btn" id="calToday">Today</button>
+            <button type="button" class="cal-nav-btn" id="calPrev" aria-label="Previous"><i class="bi bi-chevron-left"></i></button>
+            <button type="button" class="cal-nav-btn" id="calNext" aria-label="Next"><i class="bi bi-chevron-right"></i></button>
+            <span class="cal-toolbar-title" id="calTitle"></span>
+          </div>
+          <div class="cal-view-tabs" id="calViewTabs">
+            <button type="button" class="cal-view-tab active" data-view="dayGridMonth">Month</button>
+            <button type="button" class="cal-view-tab" data-view="timeGridWeek">Week</button>
+            <button type="button" class="cal-view-tab" data-view="dayGridDay">Day</button>
+            <button type="button" class="cal-view-tab" data-view="listWeek">Agenda</button>
+            <button type="button" class="cal-view-tab" data-view="table">Table</button>
+          </div>
+        </div>
+
+        <div id="calendar"></div>
+
+        <div id="eventTableWrap" class="d-none">
+          {% if events %}
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="text-muted" style="font-size:.8rem;">{{ events|length }} event(s), earliest first.</div>
+              <input type="text" id="eventTableSearch" class="form-control form-control-sm" style="max-width:260px;" placeholder="Search title, division, location…">
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0" id="eventTable">
+                <thead>
+                  <tr>
+                    <th style="width:28px;"></th>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Priority</th>
+                    <th>Dates</th>
+                    <th>Division</th>
+                    <th>Location</th>
+                    <th>MD Eligible</th>
+                    <th>Posted By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for event in events %}
+                    {% set creator = creators.get(event.created_by, {"name": event.created_by, "division": "Unassigned", "color": "#999"}) %}
+                    {% set clashes = conflicts.get(event.id, []) %}
+                    <tr class="event-row" id="eventRow{{ event.id }}" data-search="{{ (event.title ~ ' ' ~ event.event_type_label ~ ' ' ~ creator.division ~ ' ' ~ (event.location or '') ~ ' ' ~ (event.organizer or '') ~ ' ' ~ creator.name)|lower }}">
+                      <td>
+                        <button type="button" class="expand-btn" data-bs-toggle="collapse" data-bs-target="#eventDetail{{ event.id }}" aria-expanded="false">
+                          <i class="bi bi-chevron-right"></i>
+                        </button>
+                      </td>
+                      <td class="fw-semibold">
+                        {{ event.title }}
+                        {% if clashes %}
+                          <i class="bi bi-exclamation-triangle-fill conflict-flag"
+                             title="Scheduling conflict — overlaps with {{ clashes|map(attribute='title')|join(', ') }}"></i>
+                        {% endif %}
+                      </td>
+                      <td>{{ event.event_type_label }}</td>
+                      <td>
+                        <span class="badge table-priority-badge" style="background:var(--md-{{ PRIORITY_BADGE_COLOR[event.priority_level] }});">
+                          {{ event.priority_level.value.title() }}
+                        </span>
+                      </td>
+                      <td>
+                        {{ event.start_date.strftime('%d %b %Y') }}{% if event.end_date != event.start_date %} – {{ event.end_date.strftime('%d %b %Y') }}{% endif %}
+                      </td>
+                      <td><span class="division-swatch" style="background:{{ creator.color }};"></span> {{ creator.division }}</td>
+                      <td>{{ event.location or "—" }}</td>
+                      <td>
+                        {% if event.is_md_eligible %}<span class="badge bg-success">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}
+                      </td>
+                      <td>{{ creator.name }}</td>
+                    </tr>
+                    <tr class="collapse detail-tr" id="eventDetail{{ event.id }}">
+                      <td></td>
+                      <td colspan="8">
+                        <div class="detail-panel">
+                          {% if clashes %}
+                            <div class="conflict-alert">
+                              <i class="bi bi-exclamation-triangle-fill"></i>
+                              <div>
+                                <strong>Scheduling conflict.</strong> Overlaps with
+                                {% for other in clashes %}
+                                  <a href="#eventRow{{ other.id }}">{{ other.title }}</a>
+                                  ({{ other.start_date.strftime('%d %b') }}{% if other.end_date != other.start_date %}–{{ other.end_date.strftime('%d %b') }}{% endif %}){% if not loop.last %}, {% endif %}
+                                {% endfor %}
+                              </div>
+                            </div>
+                          {% endif %}
+
+                          <div class="detail-panel-section">
+                            <div class="detail-panel-title"><i class="bi bi-info-circle"></i>Event Details</div>
+                            <div class="detail-panel-grid">
+                              <div class="detail-panel-field"><div class="detail-label">Organizer</div><div class="detail-value">{{ event.organizer or "—" }}</div></div>
+                              <div class="detail-panel-field"><div class="detail-label">Estimated Attendees</div><div class="detail-value">{{ event.estimated_attendees if event.estimated_attendees is not none else "—" }}</div></div>
+                              {% if event.description %}
+                                <div class="detail-panel-field detail-panel-field-wide"><div class="detail-label">Description</div><div class="detail-value">{{ event.description }}</div></div>
+                              {% endif %}
+                              {% if event.key_participants %}
+                                <div class="detail-panel-field detail-panel-field-wide"><div class="detail-label">Key Participants</div><div class="detail-value">{{ event.key_participants }}</div></div>
+                              {% endif %}
+                            </div>
+                          </div>
+
+                          <div class="detail-panel-section">
+                            <div class="detail-panel-title"><i class="bi bi-shield-check"></i>Priority &amp; Impact</div>
+                            <div class="detail-panel-grid">
+                              <div class="detail-panel-field">
+                                <div class="detail-label">MD Presence Required</div>
+                                <span class="yn-badge {{ 'yn-flagged' if event.md_presence_required.value != 'NO' else 'yn-plain' }}">{{ MD_INVOLVEMENT_LABELS[event.md_presence_required] }}</span>
+                              </div>
+                              <div class="detail-panel-field">
+                                <div class="detail-label">External Stakeholder / Regulatory</div>
+                                <span class="yn-badge {{ 'yn-flagged' if event.involves_external_stakeholder else 'yn-plain' }}">{{ "Yes" if event.involves_external_stakeholder else "No" }}</span>
+                              </div>
+                              <div class="detail-panel-field">
+                                <div class="detail-label">Impact If Missed</div>
+                                <span class="yn-badge {{ 'yn-flagged' if event.has_critical_impact else 'yn-plain' }}">{{ "Yes" if event.has_critical_impact else "No" }}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {% if event.pre_event_actions or event.documents_to_prepare or event.budget_involved or event.preparation_deadline or event.conflicts_with_events %}
+                            <div class="detail-panel-section">
+                              <div class="detail-panel-title"><i class="bi bi-clipboard-check"></i>Preparation &amp; Action</div>
+                              <div class="detail-panel-grid">
+                                {% if event.pre_event_actions %}
+                                  <div class="detail-panel-field detail-panel-field-wide"><div class="detail-label">Pre-event Actions</div><div class="detail-value">{{ event.pre_event_actions }}</div></div>
+                                {% endif %}
+                                {% if event.documents_to_prepare %}
+                                  <div class="detail-panel-field detail-panel-field-wide"><div class="detail-label">Documents / Reports To Prepare</div><div class="detail-value">{{ event.documents_to_prepare }}</div></div>
+                                {% endif %}
+                                {% if event.budget_involved %}
+                                  <div class="detail-panel-field"><div class="detail-label">Budget</div><div class="detail-value">{% if event.budget_amount %}₹{{ "%.2f"|format(event.budget_amount) }}{% else %}Yes{% endif %}</div></div>
+                                {% endif %}
+                                {% if event.preparation_deadline %}
+                                  <div class="detail-panel-field"><div class="detail-label">Preparation Deadline</div><div class="detail-value">{{ event.preparation_deadline.strftime('%d %b %Y') }}</div></div>
+                                {% endif %}
+                                {% if event.conflicts_with_events and event.conflicts_with_events.value != 'NOT_SURE' %}
+                                  <div class="detail-panel-field detail-panel-field-wide"><div class="detail-label">Self-reported Conflicts</div><div class="detail-value">{{ CONFLICT_STATUS_LABELS[event.conflicts_with_events] }}{% if event.conflict_notes %} — {{ event.conflict_notes }}{% endif %}</div></div>
+                                {% endif %}
+                              </div>
+                            </div>
+                          {% endif %}
+
+                          {% if event.attachment_type_list or event.attachment_notes %}
+                            <div class="detail-panel-section">
+                              <div class="detail-panel-title"><i class="bi bi-paperclip"></i>Attachments</div>
+                              <div class="detail-panel-grid">
+                                {% if event.attachment_type_list %}
+                                  <div class="detail-panel-field detail-panel-field-wide">
+                                    <div class="detail-label">On Hand</div>
+                                    <div class="detail-value">{% for code in event.attachment_type_list %}{{ ATTACHMENT_TYPE_LABELS.get(code, code) }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+                                  </div>
+                                {% endif %}
+                                {% if event.attachment_notes %}
+                                  <div class="detail-panel-field detail-panel-field-wide"><div class="detail-label">Notes</div><div class="detail-value">{{ event.attachment_notes }}</div></div>
+                                {% endif %}
+                              </div>
+                            </div>
+                          {% endif %}
+
+                          <div class="detail-panel-footer">Posted {{ event.created_at.strftime('%d %b %Y') }} by {{ creator.name }}</div>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <i class="bi bi-table"></i>
+              <div class="fw-semibold mb-1">No events yet</div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="md-card">
+      <div class="md-card-body">
+        <div class="cal-agenda-label" style="margin-top:0;">All Events</div>
+        <div class="cal-agenda-summary">
+          {{ events|length }} event{{ "s" if events|length != 1 else "" }}
+          {% if clashing_count %} &middot; <span class="text-danger fw-semibold">{{ clashing_count }} clashing</span>{% endif %}
+        </div>
+        <div id="agendaList" class="cal-agenda-scroll">
+          {% if events %}
+            {% for event in events %}
+              {% set creator = creators.get(event.created_by, {"name": event.created_by, "division": "Unassigned", "colorName": "muted"}) %}
+              {% set clashes = conflicts.get(event.id, []) %}
+              <div class="cal-agenda-card tag-accent-{{ creator.colorName }}" data-event-id="{{ event.id }}" role="button" tabindex="0">
+                <div class="cal-agenda-time">
+                  {{ event.start_date.strftime('%d %b') }}{% if event.end_date != event.start_date %}–{{ event.end_date.strftime('%d %b') }}{% endif %}
+                </div>
+                <div class="cal-agenda-title">
+                  <span>{{ event.title }}</span>
+                  {% if clashes %}
+                    <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size:.75rem;"
+                       title="Clashes with {{ clashes|map(attribute='title')|join(', ') }}"></i>
+                  {% endif %}
+                </div>
+                <div class="cal-agenda-meta">{{ creator.division }} &middot; {{ PRIORITY_LABELS[event.priority_level] }}</div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="cal-agenda-empty">No events posted yet.</div>
+          {% endif %}
+        </div>
+
+        <div class="cal-agenda-label mb-2">Divisions</div>
+        {% if legend %}
+          <div class="cal-legend">
+            {% for row in legend %}
+              <span class="cal-legend-item"><span class="cal-legend-swatch" style="background:{{ row.color }};"></span>{{ row.division }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="cal-agenda-empty">No divisions have posted events yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="eventDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h6 class="modal-title fw-bold mb-1" id="eventDetailTitle">Event</h6>
+            <div>
+              <span class="badge" id="eventDetailDivision"></span>
+              <span class="badge" id="eventDetailPriority"></span>
+              <span class="badge bg-success d-none" id="eventDetailMdEligible">MD Eligible</span>
+            </div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+          <div class="text-muted small mb-3" id="eventDetailWhen"></div>
+
+          <div class="row">
+            <div class="col-md-6 detail-row">
+              <div class="detail-label">Event Type</div>
+              <div id="eventDetailType">—</div>
+            </div>
+            <div class="col-md-6 detail-row d-none" id="eventDetailLocationRow">
+              <div class="detail-label">Venue / Location</div>
+              <div id="eventDetailLocation"></div>
+            </div>
+            <div class="col-md-6 detail-row d-none" id="eventDetailOrganizerRow">
+              <div class="detail-label">Organizer</div>
+              <div id="eventDetailOrganizer"></div>
+            </div>
+            <div class="col-md-6 detail-row d-none" id="eventDetailAttendeesRow">
+              <div class="detail-label">Estimated Attendees</div>
+              <div id="eventDetailAttendees"></div>
+            </div>
+          </div>
+
+          <div class="detail-row d-none" id="eventDetailDescriptionRow">
+            <div class="detail-label">Description</div>
+            <div id="eventDetailDescription" style="white-space:pre-wrap;font-size:.85rem;"></div>
+          </div>
+          <div class="detail-row d-none" id="eventDetailParticipantsRow">
+            <div class="detail-label">Key Participants</div>
+            <div id="eventDetailParticipants" style="white-space:pre-wrap;font-size:.85rem;"></div>
+          </div>
+          <div class="detail-row d-none" id="eventDetailAttachmentsRow">
+            <div class="detail-label">Attachments On Hand</div>
+            <div id="eventDetailAttachments" style="font-size:.85rem;"></div>
+          </div>
+
+          <div class="text-muted small mt-3">Posted by <span id="eventDetailCreator" class="fw-semibold"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const detailModalEl = document.getElementById("eventDetailModal");
+      const detailModal = new bootstrap.Modal(detailModalEl);
+
+      function fmtDate(d) {
+        return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+      }
+
+      function setRow(rowId, textId, value) {
+        const row = document.getElementById(rowId);
+        if (value) {
+          document.getElementById(textId).textContent = value;
+          row.classList.remove("d-none");
+        } else {
+          row.classList.add("d-none");
+        }
+      }
+
+      function showEventDetail(event) {
+        const props = event.extendedProps;
+
+        document.getElementById("eventDetailTitle").textContent = event.title;
+        document.getElementById("eventDetailDivision").className = "badge tag-" + props.colorName;
+        document.getElementById("eventDetailDivision").textContent = props.division || "Unassigned";
+        document.getElementById("eventDetailPriority").className = "badge tag-" + props.priorityColor;
+        document.getElementById("eventDetailPriority").textContent = props.priorityLabel || "";
+        document.getElementById("eventDetailMdEligible").classList.toggle("d-none", !props.mdEligible);
+
+        // FullCalendar's all-day end is exclusive; step back a day so a
+        // single-day event doesn't read as spanning into the next one.
+        const endInclusive = new Date(event.end.getTime());
+        endInclusive.setDate(endInclusive.getDate() - 1);
+        document.getElementById("eventDetailWhen").textContent =
+          endInclusive.getTime() > event.start.getTime()
+            ? fmtDate(event.start) + " – " + fmtDate(endInclusive)
+            : fmtDate(event.start);
+
+        document.getElementById("eventDetailType").textContent = props.eventTypeLabel || "—";
+
+        setRow("eventDetailLocationRow", "eventDetailLocation", props.location);
+        setRow("eventDetailOrganizerRow", "eventDetailOrganizer", props.organizer);
+        setRow("eventDetailAttendeesRow", "eventDetailAttendees", props.estimatedAttendees ? String(props.estimatedAttendees) : "");
+        setRow("eventDetailDescriptionRow", "eventDetailDescription", props.description);
+        setRow("eventDetailParticipantsRow", "eventDetailParticipants", props.keyParticipants);
+        setRow("eventDetailAttachmentsRow", "eventDetailAttachments", (props.attachmentTypes || []).join(", "));
+
+        document.getElementById("eventDetailCreator").textContent = props.createdByName || "—";
+
+        detailModal.show();
+      }
+
+      // ---- Month / Week / Day / Agenda / Table tabs ----
+      // The toolbar lives outside #calendar (FullCalendar's own
+      // headerToolbar is disabled below), so hiding #calendar for Table
+      // mode never takes the navigation controls down with it — the bug
+      // in the previous version, where Table lived *inside* FullCalendar's
+      // own toolbar and hiding the calendar hid that toolbar too.
+      const calendarEl = document.getElementById("calendar");
+      const tableWrap = document.getElementById("eventTableWrap");
+      const titleEl = document.getElementById("calTitle");
+      const viewTabs = document.querySelectorAll("#calViewTabs .cal-view-tab");
+
+      const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: "dayGridMonth",
+        headerToolbar: false,
+        height: "auto",
+        events: "{{ url_for('corporate_calendar.events_json') }}",
+        datesSet: function (info) { titleEl.textContent = info.view.title; },
+        eventClick: function (info) { showEventDetail(info.event); },
+      });
+      calendar.render();
+
+      document.getElementById("calToday").addEventListener("click", function () { calendar.today(); });
+      document.getElementById("calPrev").addEventListener("click", function () { calendar.prev(); });
+      document.getElementById("calNext").addEventListener("click", function () { calendar.next(); });
+
+      function showTableView() {
+        viewTabs.forEach(function (t) { t.classList.remove("active"); });
+        document.querySelector('#calViewTabs .cal-view-tab[data-view="table"]').classList.add("active");
+        calendarEl.classList.add("d-none");
+        tableWrap.classList.remove("d-none");
+      }
+
+      viewTabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          viewTabs.forEach(function (t) { t.classList.remove("active"); });
+          tab.classList.add("active");
+          if (tab.dataset.view === "table") {
+            calendarEl.classList.add("d-none");
+            tableWrap.classList.remove("d-none");
+          } else {
+            calendarEl.classList.remove("d-none");
+            tableWrap.classList.add("d-none");
+            calendar.changeView(tab.dataset.view);
+          }
+        });
+      });
+
+      // ---- "All Events" sidebar: click a card to jump to its row in the Table ----
+      document.querySelectorAll("#agendaList .cal-agenda-card[data-event-id]").forEach(function (card) {
+        function openInTable() {
+          const row = document.getElementById("eventRow" + card.dataset.eventId);
+          if (!row) return;
+          showTableView();
+          row.scrollIntoView({ behavior: "smooth", block: "center" });
+          window.location.hash = "eventRow" + card.dataset.eventId;
+        }
+        card.addEventListener("click", openInTable);
+        card.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openInTable(); }
+        });
+      });
+
+      // ---- Table: expand-chevron rotation + free-text search ----
+      document.querySelectorAll("#eventTableWrap .expand-btn").forEach(function (btn) {
+        const target = document.querySelector(btn.dataset.bsTarget);
+        if (!target) return;
+        target.addEventListener("show.bs.collapse", function () { btn.querySelector("i").className = "bi bi-chevron-down"; });
+        target.addEventListener("hide.bs.collapse", function () { btn.querySelector("i").className = "bi bi-chevron-right"; });
+      });
+
+      const search = document.getElementById("eventTableSearch");
+      if (search) {
+        search.addEventListener("input", function () {
+          const term = search.value.trim().toLowerCase();
+          document.querySelectorAll("#eventTableWrap .event-row").forEach(function (row) {
+            const matches = !term || row.dataset.search.includes(term);
+            row.classList.toggle("d-none", !matches);
+            const detail = document.getElementById(row.querySelector(".expand-btn").dataset.bsTarget.slice(1));
+            if (!matches && detail) bootstrap.Collapse.getInstance(detail)?.hide();
+          });
+        });
+      }
+    });
+  </script>
+{% endblock %}

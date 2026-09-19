@@ -1,0 +1,25 @@
+{% macro _card(title, icon, icon_class, summary, bar_class, new_label='New', show_new=true) %}
+  <div class="md-card summary-card h-100">
+    <div class="summary-card-row">
+      <div class="summary-card-icon {{ icon_class }}"><i class="bi {{ icon }}"></i></div>
+      <div class="summary-card-title">{{ title }}</div>
+      <div class="summary-card-total">{{ summary.total }}</div>
+    </div>
+    <div class="summary-card-breakdown">
+      {% if show_new %}<div class="item"><span class="num n-new">{{ summary.new }}</span><span class="lbl">{{ new_label }}</span></div>{% endif %}
+      <div class="item"><span class="num n-progress">{{ summary.in_progress }}</span><span class="lbl">In Progress</span></div>
+      <div class="item"><span class="num n-done">{{ summary.completed }}</span><span class="lbl">Completed</span></div>
+    </div>
+    <div class="progress">
+      <div class="progress-bar {{ bar_class }}" role="progressbar" style="width: {{ summary.progress_pct }}%;" aria-valuenow="{{ summary.progress_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <div class="summary-card-progress-caption"><strong>{{ summary.progress_pct }}%</strong> {{ summary.progress_label }}</div>
+  </div>
+{% endmacro %}
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-3 col-md-6">{{ _card('Projects', 'bi-kanban', 'icon-sky', project_summary, 'bar-orange') }}</div>
+  <div class="col-lg-3 col-md-6">{{ _card('Action Items', 'bi-list-check', 'icon-success', action_items_summary, 'bar-orange') }}</div>
+  <div class="col-lg-3 col-md-6">{{ _card('Tasks', 'bi-clipboard-check', 'icon-orange', task_summary, 'bar-orange') }}</div>
+  <div class="col-lg-3 col-md-6">{{ _card("Today's Meetings", 'bi-calendar-event', 'icon-pink', meeting_summary, 'bar-success', show_new=false) }}</div>
+</div>
